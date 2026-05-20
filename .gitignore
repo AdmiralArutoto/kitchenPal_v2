@@ -1,0 +1,10 @@
+# Node
+backend/node_modules/
+backend/.env
+
+# Docker
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
