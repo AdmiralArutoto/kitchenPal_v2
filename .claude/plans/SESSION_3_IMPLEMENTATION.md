@@ -204,7 +204,7 @@ Each sub-plan must include: goal, file-by-file changes with exact paths, command
 
 **Sub-plan:** `.claude/plans/stage-2-database-skeleton.md`
 
-### [ ] Stage 3 — Backend API routes
+### [x] Stage 3 — Backend API routes
 **Goal:** All Express routes implemented and tested. Backend is feature-complete from an API perspective.
 
 **Deliverables:**

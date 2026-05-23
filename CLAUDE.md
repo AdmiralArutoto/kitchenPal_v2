@@ -11,9 +11,9 @@ This file is for what doesn't belong in the spec — decisions made during imple
 ## Current State
 
 ```
-Status: Stage 2 complete. Prisma schema + initial migration applied to Supabase (profiles + recipes tables). Auth middleware verifies JWT + upserts profile; centralized error handling; /api/health public, /api/me authed. 4/4 unit tests green.
-Last session: Session 9 — Stage 2 (Database & backend skeleton)
-Next action: Begin Stage 3 (Backend API routes). Requires OPENAI_API_KEY in .env (STARTUP.md item 3) before AI routes can be smoke-tested live.
+Status: Stage 3 complete. Backend feature-complete (36/36 tests). Figma translation skill in place; component barrel created; Figma file URL recorded.
+Last session: Session 11 — figma-translation skill + component barrel
+Next action: Begin Stage 4 (Frontend scaffold + auth + About). The skill fires automatically on the first component.
 Open questions: None.
 ```
 
@@ -47,7 +47,7 @@ User-uploaded recipe images are out of MVP scope. When/if added: bucket `recipe-
 **[2026-05-23] — Figma MCP is the design source for frontend stages**
 Stages 4-6 fetch screens and tokens from a Figma file via the Figma MCP (reference-only — agent reads, then writes idiomatic Tailwind; no codegen). The Figma file URL is the single canonical reference and lives in this decisions log once available. Without it, frontend stages cannot start.
 
-Figma file URL: _[to be filled in once the file exists — see STARTUP.md item 4]_
+Figma file URL: https://www.figma.com/design/PmyY8PrGtVZ0QvsiFigRGU/Kitchenpal_design
 
 **[2026-05-23] — Stage 1 bake-ins worth remembering**
 - Tailwind v4 via `@tailwindcss/vite` plugin. No `tailwind.config.ts`, no `postcss.config.js`. Theme/customizations go in `apps/web/src/index.css` via `@theme` (when needed).
@@ -68,6 +68,21 @@ Supabase MCP flagged "RLS disabled" as critical on `profiles`, `recipes`, and `_
 
 **[2026-05-23] — Routes throw `HttpError`, not `res.status().json()`**
 Defined in `apps/api/src/middleware/errors.ts`. Routes throw `HttpError(status, message)`; the error middleware serializes to `{ error: string }`. Keeps logs consistent (pino-http captures status + responseTime per request) and avoids handler-control-flow bugs.
+
+**[2026-05-23] — Zod schemas in `apps/api/src/schemas/` are the source of truth**
+Request bodies and AI response shapes are defined as Zod schemas. TS types are derived via `z.infer<typeof Schema>` — never declared as a separate interface. Adding a field means editing one schema; the type updates everywhere.
+
+**[2026-05-23] — `generate-drafts` wraps its OpenAI response as `{ drafts: [...] }`**
+OpenAI JSON mode requires a top-level object, not an array. The system prompt asks for `{ "drafts": [...] }`; the route validates that shape and unwraps to a bare `Draft[]` before responding. Frontend gets a plain array.
+
+**[2026-05-23] — `req.userEmail` is populated by `authMiddleware` from the verified JWT**
+Saves a per-request `auth.admin.getUserById()` lookup. The `Request` type augmentation lives in `auth.ts` alongside `userId`. Routes that need the email read `req.userEmail` directly; the `GET /api/profile` response includes it.
+
+**[2026-05-23] — Vitest `beforeEach` uses `vi.resetAllMocks()`, not `vi.clearAllMocks()`**
+`clearAllMocks` only clears call history; it does NOT drain `mockResolvedValueOnce` queues. Tests that don't consume all their queued values (e.g. a 400 case where Zod rejects before Prisma is touched) leak the unused value into the next test. `resetAllMocks` clears the queue too. Use this pattern in all backend tests.
+
+**[2026-05-23] — Frontend implementation goes through the `figma-translation` skill**
+Auto-fires on any frontend implementation task. Lives at `.claude/skills/figma-translation/SKILL.md`. Enforces (1) read `apps/web/src/components/index.ts` and `apps/web/src/index.css` first, (2) decompose the frame and map every element to an existing component or justify "new:", (3) hex literals belong in `@theme` only — never in JSX. Created before Stage 4 because the Figma file is Figma Make output with no components/variables; without this skill the codebase will fork buttons and hardcode colors across stages.
 
 ---
 

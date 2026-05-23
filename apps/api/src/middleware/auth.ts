@@ -6,6 +6,7 @@ import { HttpError } from './errors.js';
 declare module 'express-serve-static-core' {
   interface Request {
     userId?: string;
+    userEmail?: string;
   }
 }
 
@@ -30,6 +31,7 @@ export const authMiddleware: RequestHandler = async (req, _res, next) => {
     });
 
     req.userId = userId;
+    req.userEmail = data.user.email ?? undefined;
     next();
   } catch (err) {
     next(err);

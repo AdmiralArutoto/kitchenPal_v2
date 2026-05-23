@@ -13,6 +13,7 @@ vi.mock('../lib/prisma.js', () => ({
   prisma: {
     profile: {
       upsert: vi.fn(),
+      findUnique: vi.fn(),
     },
   },
 }));
@@ -23,15 +24,17 @@ const { createApp } = await import('../app.js');
 
 const getUserMock = supabaseAdmin.auth.getUser as ReturnType<typeof vi.fn>;
 const upsertMock = prisma.profile.upsert as ReturnType<typeof vi.fn>;
+const findUniqueMock = prisma.profile.findUnique as ReturnType<typeof vi.fn>;
 
-describe('authMiddleware on GET /api/me', () => {
+describe('authMiddleware on GET /api/profile', () => {
   beforeEach(() => {
     getUserMock.mockReset();
     upsertMock.mockReset();
+    findUniqueMock.mockReset();
   });
 
   it('returns 401 when Authorization header is missing', async () => {
-    const res = await request(createApp()).get('/api/me');
+    const res = await request(createApp()).get('/api/profile');
     expect(res.status).toBe(401);
     expect(res.body).toEqual({ error: 'Missing or malformed Authorization header' });
     expect(getUserMock).not.toHaveBeenCalled();
@@ -39,9 +42,7 @@ describe('authMiddleware on GET /api/me', () => {
   });
 
   it('returns 401 when Authorization header is malformed', async () => {
-    const res = await request(createApp())
-      .get('/api/me')
-      .set('Authorization', 'NotBearer abc');
+    const res = await request(createApp()).get('/api/profile').set('Authorization', 'NotBearer abc');
     expect(res.status).toBe(401);
     expect(res.body).toEqual({ error: 'Missing or malformed Authorization header' });
     expect(getUserMock).not.toHaveBeenCalled();
@@ -54,7 +55,7 @@ describe('authMiddleware on GET /api/me', () => {
     });
 
     const res = await request(createApp())
-      .get('/api/me')
+      .get('/api/profile')
       .set('Authorization', 'Bearer some-token');
 
     expect(res.status).toBe(401);
@@ -63,20 +64,22 @@ describe('authMiddleware on GET /api/me', () => {
     expect(upsertMock).not.toHaveBeenCalled();
   });
 
-  it('returns 200 with userId and upserts the profile when token is valid', async () => {
+  it('upserts the profile and reaches the route when token is valid', async () => {
     const userId = '11111111-1111-1111-1111-111111111111';
+    const email = 'user@example.com';
     getUserMock.mockResolvedValueOnce({
-      data: { user: { id: userId } },
+      data: { user: { id: userId, email } },
       error: null,
     });
-    upsertMock.mockResolvedValueOnce({ id: userId, name: null, preferences: [] });
+    upsertMock.mockResolvedValueOnce({ id: userId });
+    findUniqueMock.mockResolvedValueOnce({ id: userId, name: 'Alice', preferences: ['vegan'] });
 
     const res = await request(createApp())
-      .get('/api/me')
+      .get('/api/profile')
       .set('Authorization', 'Bearer valid-token');
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ userId });
+    expect(res.body).toEqual({ name: 'Alice', preferences: ['vegan'], email });
     expect(getUserMock).toHaveBeenCalledWith('valid-token');
     expect(upsertMock).toHaveBeenCalledTimes(1);
     expect(upsertMock).toHaveBeenCalledWith({
