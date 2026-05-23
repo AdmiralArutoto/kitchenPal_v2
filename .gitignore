@@ -1,8 +1,19 @@
 # Node
-backend/node_modules/
-backend/.env
+node_modules/
+apps/*/node_modules/
 
-# Docker
+# Build output
+dist/
+apps/*/dist/
+
+# Env
+.env
+.env.local
+
+# Vercel
+.vercel/
+
+# Logs
 *.log
 
 # OS
