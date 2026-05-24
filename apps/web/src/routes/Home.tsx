@@ -1,5 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { apiFetch, ApiError } from '../lib/api';
+import { useCreateRecipe } from '../hooks/useRecipes';
+import { useToast } from '../contexts/ToastContext';
 import type { Draft, FullRecipeResponse } from '../types/api';
 import Hero from '../components/Hero';
 import GenBar from '../components/GenBar';
@@ -8,7 +10,6 @@ import Pill from '../components/Pill';
 import AssistPanel from '../components/AssistPanel';
 import DraftsPanel from '../components/DraftsPanel';
 import FinalRecipePanel from '../components/FinalRecipePanel';
-import Toast from '../components/Toast';
 
 const CATEGORIES = [
   { emoji: '🍝', label: 'Italian' },
@@ -29,7 +30,7 @@ const FEATURED_RECIPES = [
 ];
 
 type Phase = 'idle' | 'assist' | 'drafts' | 'final';
-type Busy = 'drafts' | 'full' | 'regenerate' | 'approve' | null;
+type Busy = 'drafts' | 'full' | 'regenerate' | null;
 
 export default function Home() {
   const [prompt, setPrompt] = useState('');
@@ -39,13 +40,9 @@ export default function Home() {
   const [recipe, setRecipe] = useState<FullRecipeResponse | null>(null);
   const [busy, setBusy] = useState<Busy>(null);
   const [error, setError] = useState<string | null>(null);
-  const [toast, setToast] = useState<{ message: string; kind: 'success' | 'error' } | null>(null);
 
-  useEffect(() => {
-    if (!toast) return;
-    const id = setTimeout(() => setToast(null), 3000);
-    return () => clearTimeout(id);
-  }, [toast]);
+  const createMutation = useCreateRecipe();
+  const { showToast } = useToast();
 
   function composePrompt(): string {
     const pillStr = pills.join(', ');
@@ -107,36 +104,26 @@ export default function Home() {
     }
   }
 
-  async function onApprove() {
-    if (busy || !recipe) return;
-    setBusy('approve');
+  function onApprove() {
+    if (!recipe) return;
+    createMutation.mutate({
+      name: recipe.name,
+      description: recipe.description,
+      ingredients: recipe.ingredients,
+      steps: recipe.steps,
+      tags: recipe.tags,
+      cookingTime: recipe.cooking_time,
+      servings: recipe.servings,
+      emoji: recipe.emoji,
+      source: 'ai_generated',
+    });
+    setRecipe(null);
+    setDrafts([]);
+    setPills([]);
+    setPrompt('');
+    setPhase('idle');
     setError(null);
-    try {
-      await apiFetch('/api/recipes', {
-        method: 'POST',
-        body: JSON.stringify({
-          name: recipe.name,
-          description: recipe.description,
-          ingredients: recipe.ingredients,
-          steps: recipe.steps,
-          tags: recipe.tags,
-          cookingTime: recipe.cooking_time,
-          servings: recipe.servings,
-          emoji: recipe.emoji,
-          source: 'ai_generated',
-        }),
-      });
-      setRecipe(null);
-      setDrafts([]);
-      setPills([]);
-      setPrompt('');
-      setPhase('idle');
-      setToast({ message: 'Recipe saved to your collection', kind: 'success' });
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Failed to save recipe');
-    } finally {
-      setBusy(null);
-    }
+    showToast('Recipe saved to your collection', 'success');
   }
 
   function onDeleteFinal() {
@@ -204,10 +191,11 @@ export default function Home() {
             <FinalRecipePanel
               recipe={recipe}
               onDelete={onDeleteFinal}
+              onEdit={setRecipe}
               onRegenerate={onRegenerate}
               onApprove={onApprove}
               regenerating={busy === 'regenerate'}
-              approving={busy === 'approve'}
+              approving={false}
             />
           </div>
         </section>
@@ -265,10 +253,6 @@ export default function Home() {
           </div>
         </div>
       </section>
-
-      {toast && (
-        <Toast message={toast.message} kind={toast.kind} onDismiss={() => setToast(null)} />
-      )}
     </>
   );
 }

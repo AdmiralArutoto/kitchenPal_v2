@@ -4,14 +4,13 @@ type Props = {
   onDismiss: () => void;
 };
 
-// Single-toast notification. Auto-dismiss handled by the parent (setTimeout).
-// Positioned top-center, fixed, above all other content.
+// Single toast notification. Position is owned by ToastViewport.
 export default function Toast({ message, kind = 'success', onDismiss }: Props) {
   return (
     <div
       role="status"
       aria-live="polite"
-      className="fixed left-1/2 top-6 z-50 flex -translate-x-1/2 items-center gap-3 rounded-lg border border-border-subtle bg-bg-card px-4 py-3 shadow-lg"
+      className="flex items-center gap-3 rounded-lg border border-border-subtle bg-bg-card px-4 py-3 shadow-lg"
     >
       <span
         className={`inline-flex h-5 w-5 items-center justify-center rounded-full ${

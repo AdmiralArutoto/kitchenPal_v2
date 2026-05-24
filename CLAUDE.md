@@ -11,10 +11,10 @@ This file is for what doesn't belong in the spec — decisions made during imple
 ## Current State
 
 ```
-Status: Stage 6 complete (6a+6b+6c+6d). AddRecipeModal shipped — Add Recipe button on /catalog opens a manual creation form; POSTs with source: 'manual'; catalog refetches on success. 25 components (added Textarea + AddRecipeModal), 24 tokens. Build clean; 36/36 backend tests green.
-Last session: Session 20 — Stage 6d (AddRecipeModal)
-Next action: Stage 7 — Deployment to Vercel. Requires STARTUP.md items 5 (Vercel project link) + env vars in Vercel + production SMTP (item 6, deferred OK if dev SMTP suffices for first deploy).
-Open questions: Edit mode (Pass 5d in final-recipe panel + Pass 6e in RecipeModal) and Filter popover (Pass 6f) still deferred. Schedule explicitly before or after Stage 7 deployment.
+Status: Recipe caching with optimistic updates shipped. Recipe CRUD (add/edit/delete/AI-modify-approve) is now instant — UI mutates first, backend sync runs in background, rollback + toast on failure. Built on @tanstack/react-query with one `['recipes']` query (fetched once per session) and three mutation hooks (create/update/delete) that share a cache invalidation contract. Filtering/sorting moved client-side in Catalog. Shared ToastProvider promoted from Home. Build clean; 36/36 backend tests green.
+Last session: Session 22 — recipe caching + optimistic mutations.
+Next action: Stage 7 (Vercel deploy) parked per user — focus stays on dev. No outstanding in-app TODOs; awaiting next user-proposed feature/polish.
+Open questions: None active.
 ```
 
 ---
@@ -198,8 +198,52 @@ Two-column ingredient table matches the Figma: Amount + Ingredient. The Amount c
 **[2026-05-24] — AddRecipeModal: emoji auto-assigned from a 15-item list**
 Random food emoji chosen at mount via `useState(() => EMOJIS[...])`. No UI to change (matches Figma omission). SPEC §5.3's "user can change emoji" is deferred until Edit mode lands.
 
+**[2026-05-24] — `RecipeEditForm` is the single recipe-form surface**
+Created during combined pass 5d/6e/6f. All three editor entry points — Add Recipe (`AddRecipeModal`), Edit Recipe on Catalog (`RecipeModal` in editing mode), Edit on the inline final-recipe panel (`FinalRecipePanel` in editing mode) — render the same `<RecipeEditForm>`. The form owns its own state seeded from `initialValues: RecipeFormValues` and calls `onSave(values)` once validated. Each call site owns persistence: AddRecipeModal POSTs, RecipeModal PUTs with `source` preserved, FinalRecipePanel just mutates parent state via `onEdit` (Approve commits later). Snake_case ↔ camelCase translation happens at the call site, not in the form. Any future change to ingredient parsing, tag bulk-add, or step UX lands once.
+
+**[2026-05-24] — `FinalRecipePanel` Edit is in-memory only**
+Pass 5d: Edit on the generated final-recipe panel does NOT call the backend. It mutates the local `recipe` state in `Home.tsx` via `onEdit(updated)` and exits edit. The recipe only persists when the user clicks Approve (which still POSTs `source: 'ai_generated'`). This keeps the flow consistent — the AI flow is "generate → maybe tweak → approve to save" — and avoids creating draft DB rows.
+
+**[2026-05-24] — `RecipeModal` Edit preserves `source`**
+Pass 6e: Saving an edit in the catalog modal PUTs `/api/recipes/:id` with the recipe's existing `source` value (`ai_generated`, `ai_modified`, or `manual`). Manual edits do NOT promote a recipe to `ai_modified` — that status is reserved for AI-driven mutations via `/api/ai/modify`. The two paths are distinct in the data model and stay distinct in the UI.
+
+**[2026-05-24] — `FilterPopover` mirrors `SortDropdown` interaction model**
+Pass 6f. Outside-click + Escape close, same `useRef` + `useEffect` pattern. Multi-select listbox with checkbox icons (no extra dependency); "Clear all" footer only renders when ≥1 tag is active. OR semantics — selecting any tag includes recipes that match at least one (`hasSome` on the backend, matches `?tags=a,b` parsing). Active button gets `border-primary text-primary` so it's visually distinct from the inactive secondary state.
+
+**[2026-05-24] — Catalog's `allTags` is cached when no filter/search is active**
+The available-tags list is unioned across `recipes` from the most recent fetch AND sorted alphabetically. But it's only updated when both `selectedTags.length === 0` and `searchQuery === ''` — otherwise the popover would prune itself as the user selects (because filtering narrows the result set, and recomputing from a narrowed set would drop unselected tags from the menu). Cost: if the user adds a recipe with a new tag while a filter is active, the new tag won't appear in the popover until the filter is cleared and the next fetch completes. Acceptable for MVP.
+
 **[2026-05-24] — AddRecipeModal tag input supports comma-separated bulk-add**
 Typing "Italian, Quick" + Enter adds both pills in one go. Empty or duplicate values are filtered. Matches the Figma placeholder hint without sacrificing single-tag-at-a-time UX.
+
+**[2026-05-24] — Recipe caching via @tanstack/react-query**
+Single `['recipes']` query in [apps/web/src/hooks/useRecipes.ts](apps/web/src/hooks/useRecipes.ts) holds the full per-user recipe list. Configured in [apps/web/src/lib/queryClient.ts](apps/web/src/lib/queryClient.ts) with `staleTime: Infinity, refetchOnWindowFocus: false, refetchOnMount: false` — fetch once per session; mutations keep the cache accurate. Backend stays unchanged. Picked React Query over a hand-rolled context because the `onMutate`/`onError`/`onSuccess` triple gives us optimistic + rollback + reconcile uniformly across three mutation hooks (create/update/delete) with no bespoke snapshot/restore code to maintain.
+
+**[2026-05-24] — Optimistic mutations: snapshot → apply → fetch → reconcile/rollback**
+All recipe writes use the same pattern in [apps/web/src/hooks/useRecipes.ts](apps/web/src/hooks/useRecipes.ts):
+- `onMutate` cancels in-flight queries, snapshots the cache, applies the change synchronously (insert with temp id / merge / filter), returns the snapshot in context.
+- `onSuccess` reconciles by replacing the optimistic entry with the server response (picks up real `id`, `updatedAt`, normalized fields).
+- `onError` restores the snapshot and surfaces a toast via [useToast()](apps/web/src/contexts/ToastContext.tsx).
+
+Temp ids use `crypto.randomUUID()` prefixed with `temp-`. Call sites (`Home.onApprove`, `AddRecipeModal.handleSave`, `RecipeModal.handleSaveEdit`/`handleDelete`/`approveModification`) all fire the mutation **without `await`** and then close/exit-mode immediately. The mutation continues regardless of component unmount.
+
+**[2026-05-24] — Catalog filters/sorts client-side**
+[Catalog.tsx](apps/web/src/routes/Catalog.tsx) no longer sends `?search=&tags=&sort=` to the backend — it reads the full list from `useRecipes()` and applies `searchQuery` (case-insensitive name contains), `selectedTags` (`some()` match — OR semantics), and `sort` (createdAt/name) in a `useMemo`. The backend handler still accepts those params (unused; left in place). `allTags` derives directly from the unfiltered cache, so the "freeze tag list while filtering" trick is gone. Search is still debounced 300ms but the debounce now only batches state updates — there's no network call to defer.
+
+**[2026-05-24] — RecipeModal local recipe state syncs with cache when idle**
+[RecipeModal.tsx](apps/web/src/components/RecipeModal.tsx) keeps a local `recipe` state for the AI-modify flow (where the modal needs to display modifications before they're committed). Added `useEffect(() => { if (mode === 'idle') setRecipe(initialRecipe) }, [initialRecipe, mode])` so that when the cache updates (from optimistic edit save success, or rollback on failure), the modal reflects the change. Guard on `mode === 'idle'` prevents the sync from clobbering in-progress AI-modify or edit-form state.
+
+**[2026-05-24] — Catalog re-syncs `selectedRecipe` from cache**
+After a mutation updates the cache, Catalog's `selectedRecipe` (used to control which modal is open) is stale. [Catalog.tsx](apps/web/src/routes/Catalog.tsx) runs an effect: `if fresh = recipes.find(id) is undefined → close modal; else if fresh !== selectedRecipe → setSelectedRecipe(fresh)`. Together with RecipeModal's idle sync, this means the modal stays open and shows the new content after an Edit/AI-modify approve, but closes cleanly after a Delete.
+
+**[2026-05-24] — Shared ToastProvider promoted from Home**
+Toast was previously a single-toast local state in Home. Now lives at App root via [ToastProvider](apps/web/src/contexts/ToastContext.tsx) + [ToastViewport](apps/web/src/components/ToastViewport.tsx). Provider holds an array (stacks multiple toasts), auto-dismisses each after 3s, supports `success` / `error` kinds. Used by Home (approve success) and every mutation hook in `useRecipes.ts` (failure rollback). Toast.tsx kept but its positioning classes were removed; ToastViewport now owns positioning (`fixed top-6 left-1/2 -translate-x-1/2 z-50 flex flex-col gap-2`).
+
+**[2026-05-24] — `toRecipeBody` moved to [lib/recipe.ts](apps/web/src/lib/recipe.ts)**
+Was a private helper inside RecipeModal. Now a shared utility that both RecipeModal (for AI modify input + AI-modified approve) and the hook layer reference indirectly. Exports `RecipeBody` type too — the canonical shape sent to POST/PUT.
+
+**[2026-05-24] — Stage 7 (deployment) is parked, not cancelled**
+User decision: keep focus on local dev iteration; resume deployment work later. SPEC §10 success criteria can still be ticked locally against the dev environment. The master plan's `[ ] Stage 7` stays unchecked. When ready, work through STARTUP.md items 5 (Vercel) + 6 (production SMTP) and follow `.claude/plans/SESSION_3_IMPLEMENTATION.md` Stage 7 deliverables.
 
 ---
 

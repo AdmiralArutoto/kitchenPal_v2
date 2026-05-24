@@ -1,34 +1,38 @@
 import { useEffect, useState } from 'react';
 import { apiFetch, ApiError } from '../lib/api';
+import { toRecipeBody } from '../lib/recipe';
+import { useDeleteRecipe, useUpdateRecipe } from '../hooks/useRecipes';
 import type { FullRecipeResponse, Recipe } from '../types/api';
 import Modal from './Modal';
 import Pill from './Pill';
 import Button from './Button';
 import ServingScaler from './ServingScaler';
+import RecipeEditForm, { type RecipeFormValues } from './RecipeEditForm';
 
 type Props = {
   recipe: Recipe;
   onClose: () => void;
-  onDeleted: () => void;
-  onModified: () => void;
 };
 
-type Mode = 'idle' | 'modifying';
+type Mode = 'idle' | 'modifying' | 'editing';
 
-// Recipe detail modal from Figma 8:7001 (idle) + 8:8139 (modifying).
-// View-only display with live serving scaler. Delete + Modify with AI are functional.
-// Edit is a placeholder stub (Pass 6e or later).
-//
-// Modify flow: click Modify with AI → opens modify panel + footer swaps to Discard/Approve.
-// Apply runs /api/ai/modify and replaces local recipe state. Discard reverts to original.
-// Approve sends PUT /api/recipes/:id with source: 'ai_modified'.
-export default function RecipeModal({ recipe: initialRecipe, onClose, onDeleted, onModified }: Props) {
+// Recipe detail modal. View-only display with live serving scaler.
+// Edit + Delete go through cached mutations (optimistic). Modify with AI is local until Approve.
+export default function RecipeModal({ recipe: initialRecipe, onClose }: Props) {
   const [recipe, setRecipe] = useState<Recipe>(initialRecipe);
   const [mode, setMode] = useState<Mode>('idle');
   const [comment, setComment] = useState('');
   const [servingsOverride, setServingsOverride] = useState(initialRecipe.servings ?? 1);
-  const [busy, setBusy] = useState<'delete' | 'apply' | 'approve' | null>(null);
+  const [busy, setBusy] = useState<'apply' | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const updateMutation = useUpdateRecipe();
+  const deleteMutation = useDeleteRecipe();
+
+  // Sync local recipe with cache-driven prop changes while not in an active flow.
+  useEffect(() => {
+    if (mode === 'idle') setRecipe(initialRecipe);
+  }, [initialRecipe, mode]);
 
   // Reset scaler when the displayed recipe changes (e.g., after Apply).
   useEffect(() => {
@@ -87,36 +91,66 @@ export default function RecipeModal({ recipe: initialRecipe, onClose, onDeleted,
     }
   }
 
-  async function approveModification() {
-    if (busy || !isModified) return;
-    setBusy('approve');
-    setError(null);
-    try {
-      await apiFetch(`/api/recipes/${recipe.id}`, {
-        method: 'PUT',
-        body: JSON.stringify({
-          ...toRecipeBody(recipe),
-          source: 'ai_modified',
-        }),
-      });
-      onModified();
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Failed to save changes');
-      setBusy(null);
-    }
+  function approveModification() {
+    if (!isModified) return;
+    updateMutation.mutate({
+      id: recipe.id,
+      body: { ...toRecipeBody(recipe), source: 'ai_modified' },
+    });
+    onClose();
   }
 
-  async function handleDelete() {
+  function handleSaveEdit(values: RecipeFormValues) {
+    const optimistic: Recipe = {
+      ...recipe,
+      name: values.name,
+      description: values.description,
+      cookingTime: values.cookingTime,
+      servings: values.servings,
+      ingredients: values.ingredients,
+      steps: values.steps,
+      tags: values.tags,
+      emoji: values.emoji,
+    };
+    setRecipe(optimistic);
+    setMode('idle');
+    updateMutation.mutate({
+      id: recipe.id,
+      body: { ...toRecipeBody(optimistic), source: recipe.source },
+    });
+  }
+
+  function handleDelete() {
     if (!window.confirm(`Delete "${recipe.name}"? This cannot be undone.`)) return;
-    setBusy('delete');
-    setError(null);
-    try {
-      await apiFetch(`/api/recipes/${recipe.id}`, { method: 'DELETE' });
-      onDeleted();
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Failed to delete');
-      setBusy(null);
-    }
+    deleteMutation.mutate(recipe.id);
+    onClose();
+  }
+
+  if (mode === 'editing') {
+    return (
+      <Modal open ariaLabel={`Edit ${recipe.name}`} onClose={onClose}>
+        <RecipeEditForm
+          title="Edit Recipe"
+          initialValues={{
+            name: recipe.name,
+            description: recipe.description,
+            cookingTime: recipe.cookingTime,
+            servings: recipe.servings,
+            ingredients: recipe.ingredients,
+            steps: recipe.steps,
+            tags: recipe.tags,
+            emoji: recipe.emoji,
+          }}
+          onCancel={() => {
+            setError(null);
+            setMode('idle');
+          }}
+          onSave={handleSaveEdit}
+          saving={false}
+          submitLabel="Save"
+        />
+      </Modal>
+    );
   }
 
   return (
@@ -258,7 +292,6 @@ export default function RecipeModal({ recipe: initialRecipe, onClose, onDeleted,
                 variant="secondary"
                 size="sm"
                 onClick={startModify}
-                disabled={busy !== null}
               >
                 <SparkleIcon /> <span className="ml-2">Modify with AI</span>
               </Button>
@@ -266,20 +299,20 @@ export default function RecipeModal({ recipe: initialRecipe, onClose, onDeleted,
                 type="button"
                 variant="secondary"
                 size="sm"
-                disabled
-                title="Coming soon"
-                className="cursor-not-allowed"
+                onClick={() => {
+                  setError(null);
+                  setMode('editing');
+                }}
               >
                 <PencilIcon /> <span className="ml-2">Edit</span>
               </Button>
               <button
                 type="button"
                 onClick={handleDelete}
-                disabled={busy !== null}
-                className="inline-flex h-8 items-center gap-2 rounded-lg border border-border-subtle bg-bg-card px-3 text-sm font-medium text-danger hover:bg-bg-toggle disabled:opacity-60"
+                className="inline-flex h-8 items-center gap-2 rounded-lg border border-border-subtle bg-bg-card px-3 text-sm font-medium text-danger hover:bg-bg-toggle"
               >
                 <TrashIcon />
-                <span>{busy === 'delete' ? 'Deleting…' : 'Delete'}</span>
+                <span>Delete</span>
               </button>
             </>
           ) : (
@@ -289,7 +322,7 @@ export default function RecipeModal({ recipe: initialRecipe, onClose, onDeleted,
                 variant="secondary"
                 size="sm"
                 onClick={cancelModify}
-                disabled={busy !== null}
+                disabled={busy === 'apply'}
               >
                 Discard
               </Button>
@@ -297,10 +330,10 @@ export default function RecipeModal({ recipe: initialRecipe, onClose, onDeleted,
                 type="button"
                 size="sm"
                 onClick={approveModification}
-                disabled={!isModified || busy !== null}
+                disabled={!isModified || busy === 'apply'}
                 title={!isModified ? 'Apply a modification first to enable Approve' : undefined}
               >
-                {busy === 'approve' ? 'Saving…' : 'Approve'}
+                Approve
               </Button>
             </>
           )}
@@ -308,20 +341,6 @@ export default function RecipeModal({ recipe: initialRecipe, onClose, onDeleted,
       </div>
     </Modal>
   );
-}
-
-function toRecipeBody(recipe: Recipe) {
-  return {
-    name: recipe.name,
-    description: recipe.description,
-    ingredients: recipe.ingredients,
-    steps: recipe.steps,
-    tags: recipe.tags,
-    cookingTime: recipe.cookingTime,
-    servings: recipe.servings,
-    emoji: recipe.emoji,
-    source: recipe.source,
-  };
 }
 
 function formatAmount(n: number): string {

@@ -4,10 +4,12 @@ import Panel from './Panel';
 import Pill from './Pill';
 import Button from './Button';
 import Input from './Input';
+import RecipeEditForm, { type RecipeFormValues } from './RecipeEditForm';
 
 type Props = {
   recipe: FullRecipeResponse;
   onDelete: () => void;
+  onEdit: (updated: FullRecipeResponse) => void;
   onRegenerate: (comment: string) => void;
   onApprove: () => void;
   regenerating?: boolean;
@@ -16,11 +18,12 @@ type Props = {
 
 // Inline final-recipe panel — Figma 8:4636.
 // Content: title + description + meta + accent tag pills + Ingredients table + Instructions list.
-// Footer action row: Delete (danger ghost) / Edit (disabled, Pass 5d) / Regenerate (toggles inline comment) / Approve (primary).
-// Edit is deferred to Pass 5d — rendered disabled with `title="Coming soon"`.
+// Footer action row: Delete / Edit / Regenerate / Approve.
+// Edit toggles to RecipeEditForm; Save updates local recipe state via onEdit (Approve commits to DB).
 export default function FinalRecipePanel({
   recipe,
   onDelete,
+  onEdit,
   onRegenerate,
   onApprove,
   regenerating = false,
@@ -28,6 +31,7 @@ export default function FinalRecipePanel({
 }: Props) {
   const [regenerateOpen, setRegenerateOpen] = useState(false);
   const [comment, setComment] = useState('');
+  const [editing, setEditing] = useState(false);
   const busy = regenerating || approving;
 
   function submitRegenerate() {
@@ -36,6 +40,43 @@ export default function FinalRecipePanel({
     onRegenerate(trimmed);
     setComment('');
     setRegenerateOpen(false);
+  }
+
+  function handleSaveEdit(values: RecipeFormValues) {
+    onEdit({
+      name: values.name,
+      description: values.description ?? '',
+      ingredients: values.ingredients,
+      steps: values.steps,
+      tags: values.tags,
+      cooking_time: values.cookingTime ?? 0,
+      servings: values.servings ?? 1,
+      emoji: values.emoji ?? recipe.emoji,
+    });
+    setEditing(false);
+  }
+
+  if (editing) {
+    return (
+      <Panel padding="none" className="overflow-hidden">
+        <RecipeEditForm
+          title="Edit Recipe"
+          initialValues={{
+            name: recipe.name,
+            description: recipe.description,
+            cookingTime: recipe.cooking_time,
+            servings: recipe.servings,
+            ingredients: recipe.ingredients,
+            steps: recipe.steps,
+            tags: recipe.tags,
+            emoji: recipe.emoji,
+          }}
+          onCancel={() => setEditing(false)}
+          onSave={handleSaveEdit}
+          submitLabel="Save changes"
+        />
+      </Panel>
+    );
   }
 
   return (
@@ -163,9 +204,8 @@ export default function FinalRecipePanel({
               type="button"
               variant="secondary"
               size="sm"
-              disabled
-              title="Coming soon"
-              className="cursor-not-allowed"
+              onClick={() => setEditing(true)}
+              disabled={busy}
             >
               <PencilIcon /> <span className="ml-2">Edit</span>
             </Button>

@@ -1,8 +1,10 @@
-import { useEffect, useState } from 'react';
-import { apiFetch, ApiError } from '../lib/api';
+import { useEffect, useMemo, useState } from 'react';
+import { ApiError } from '../lib/api';
+import { useRecipes } from '../hooks/useRecipes';
 import type { Recipe } from '../types/api';
 import AddRecipeModal from '../components/AddRecipeModal';
 import Button from '../components/Button';
+import FilterPopover from '../components/FilterPopover';
 import Input from '../components/Input';
 import RecipeCard from '../components/RecipeCard';
 import RecipeModal from '../components/RecipeModal';
@@ -21,12 +23,16 @@ export default function Catalog() {
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [sort, setSort] = useState<SortValue>('newest');
-  const [recipes, setRecipes] = useState<Recipe[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
   const [addingRecipe, setAddingRecipe] = useState(false);
-  const [refreshKey, setRefreshKey] = useState(0);
+
+  const { data: recipes = [], isLoading, error } = useRecipes();
+  const errorMessage = error
+    ? error instanceof ApiError
+      ? error.message
+      : 'Failed to load recipes'
+    : null;
 
   // Debounce search input → searchQuery (300ms)
   useEffect(() => {
@@ -34,38 +40,36 @@ export default function Catalog() {
     return () => clearTimeout(t);
   }, [searchInput]);
 
-  // Fetch on mount + when searchQuery / sort / refreshKey changes
+  // Available-tag list always derives from the unfiltered cache.
+  const allTags = useMemo(
+    () => Array.from(new Set(recipes.flatMap((r) => r.tags))).sort((a, b) => a.localeCompare(b)),
+    [recipes],
+  );
+
+  const visibleRecipes = useMemo(() => {
+    const q = searchQuery.toLowerCase();
+    const filtered = recipes.filter((r) => {
+      if (q && !r.name.toLowerCase().includes(q)) return false;
+      if (selectedTags.length && !selectedTags.some((t) => r.tags.includes(t))) return false;
+      return true;
+    });
+    return [...filtered].sort((a, b) => compareRecipes(a, b, sort));
+  }, [recipes, searchQuery, selectedTags, sort]);
+
+  // Keep the open modal in sync with cache updates (e.g., AI modify approve).
   useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-
-    const params = new URLSearchParams();
-    if (searchQuery) params.set('search', searchQuery);
-    params.set('sort', sort);
-    const url = `/api/recipes${params.toString() ? `?${params.toString()}` : ''}`;
-
-    apiFetch<Recipe[]>(url)
-      .then((result) => {
-        if (!cancelled) {
-          setRecipes(result);
-          setLoading(false);
-        }
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          setError(err instanceof ApiError ? err.message : 'Failed to load recipes');
-          setLoading(false);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [searchQuery, sort, refreshKey]);
+    if (!selectedRecipe) return;
+    const fresh = recipes.find((r) => r.id === selectedRecipe.id);
+    if (!fresh) {
+      setSelectedRecipe(null);
+    } else if (fresh !== selectedRecipe) {
+      setSelectedRecipe(fresh);
+    }
+  }, [recipes, selectedRecipe]);
 
   const hasSearch = searchQuery.length > 0;
-  const total = recipes.length;
+  const hasFilter = selectedTags.length > 0;
+  const total = visibleRecipes.length;
   const countLabel =
     total === 1 ? '1 recipe in your collection' : `${total} recipes in your collection`;
 
@@ -100,38 +104,34 @@ export default function Catalog() {
         </div>
         <div className="flex gap-2">
           <SortDropdown<SortValue> value={sort} onChange={setSort} options={SORT_OPTIONS} />
-          <Button
-            type="button"
-            variant="secondary"
-            size="md"
-            onClick={() => console.log('Filter clicked')}
-          >
-            <FilterIcon />
-            <span className="ml-2">Filter</span>
-          </Button>
+          <FilterPopover
+            value={selectedTags}
+            onChange={setSelectedTags}
+            availableTags={allTags}
+          />
         </div>
       </div>
 
       {/* Error */}
-      {error && <p className="text-sm text-danger">{error}</p>}
+      {errorMessage && <p className="text-sm text-danger">{errorMessage}</p>}
 
       {/* Grid / empty / loading */}
-      {loading ? (
+      {isLoading ? (
         <p className="text-sm text-text-muted">Loading recipes…</p>
-      ) : recipes.length === 0 ? (
+      ) : visibleRecipes.length === 0 ? (
         <div className="rounded-2xl border border-border-subtle bg-bg-card p-12 text-center">
           <p className="text-base text-text-default">
-            {hasSearch ? 'No recipes match your search.' : 'No recipes yet.'}
+            {hasSearch || hasFilter ? 'No recipes match your search.' : 'No recipes yet.'}
           </p>
           <p className="mt-2 text-sm text-text-muted">
-            {hasSearch
-              ? 'Try a different search or clear it to see all recipes.'
+            {hasSearch || hasFilter
+              ? 'Try a different search or clear filters to see all recipes.'
               : 'Generate one from Home or click Add Recipe.'}
           </p>
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {recipes.map((r) => (
+          {visibleRecipes.map((r) => (
             <RecipeCard key={r.id} recipe={r} onClick={() => setSelectedRecipe(r)} />
           ))}
         </div>
@@ -139,32 +139,26 @@ export default function Catalog() {
 
       {/* Recipe modal */}
       {selectedRecipe && (
-        <RecipeModal
-          recipe={selectedRecipe}
-          onClose={() => setSelectedRecipe(null)}
-          onDeleted={() => {
-            setSelectedRecipe(null);
-            setRefreshKey((k) => k + 1);
-          }}
-          onModified={() => {
-            setSelectedRecipe(null);
-            setRefreshKey((k) => k + 1);
-          }}
-        />
+        <RecipeModal recipe={selectedRecipe} onClose={() => setSelectedRecipe(null)} />
       )}
 
       {/* Add Recipe modal */}
-      {addingRecipe && (
-        <AddRecipeModal
-          onClose={() => setAddingRecipe(false)}
-          onCreated={() => {
-            setAddingRecipe(false);
-            setRefreshKey((k) => k + 1);
-          }}
-        />
-      )}
+      {addingRecipe && <AddRecipeModal onClose={() => setAddingRecipe(false)} />}
     </div>
   );
+}
+
+function compareRecipes(a: Recipe, b: Recipe, sort: SortValue): number {
+  switch (sort) {
+    case 'newest':
+      return b.createdAt.localeCompare(a.createdAt);
+    case 'oldest':
+      return a.createdAt.localeCompare(b.createdAt);
+    case 'name_asc':
+      return a.name.localeCompare(b.name);
+    case 'name_desc':
+      return b.name.localeCompare(a.name);
+  }
 }
 
 function PlusIcon() {
@@ -201,24 +195,6 @@ function SearchIcon() {
     >
       <circle cx="11" cy="11" r="8" />
       <line x1="21" y1="21" x2="16.65" y2="16.65" />
-    </svg>
-  );
-}
-
-function FilterIcon() {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
     </svg>
   );
 }
