@@ -19,3 +19,6 @@ apps/*/dist/
 # OS
 .DS_Store
 Thumbs.db
+
+# Local Figma asset scratch
+.tmp-figma/

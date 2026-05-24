@@ -221,7 +221,7 @@ Each sub-plan must include: goal, file-by-file changes with exact paths, command
 
 **Sub-plan:** `.claude/plans/stage-3-backend-routes.md`
 
-### [ ] Stage 4 — Frontend scaffold + auth + About
+### [x] Stage 4 — Frontend scaffold + auth + About
 **Goal:** Minimum viable authenticated experience. User can sign up, verify email, log in, see their name, edit their profile, log out.
 
 **Deliverables:**
@@ -242,7 +242,7 @@ Each sub-plan must include: goal, file-by-file changes with exact paths, command
 
 **Sub-plan:** `.claude/plans/stage-4-frontend-scaffold.md`
 
-### [ ] Stage 5 — Frontend Home: generation flow
+### [x] Stage 5 — Frontend Home: generation flow
 **Goal:** End-to-end recipe generation. User can prompt, see drafts, pick a draft, see a full recipe, regenerate with a comment, and approve to save.
 
 **Deliverables:**
@@ -261,7 +261,7 @@ Each sub-plan must include: goal, file-by-file changes with exact paths, command
 
 **Sub-plan:** `.claude/plans/stage-5-frontend-home.md`
 
-### [ ] Stage 6 — Frontend Catalog: vault, scaler, modifier
+### [x] Stage 6 — Frontend Catalog: vault, scaler, modifier
 **Goal:** Full catalog with all interactions: list, search/sort/filter, view, edit, scale, modify with AI, add manually, delete.
 
 **Deliverables:**

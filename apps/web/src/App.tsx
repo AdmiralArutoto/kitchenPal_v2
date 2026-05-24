@@ -1,9 +1,36 @@
+import { createBrowserRouter, Navigate, RouterProvider } from 'react-router-dom';
+import { AuthProvider } from './contexts/AuthContext';
+import ProtectedRoute from './components/ProtectedRoute';
+import AuthedLayout from './components/AuthedLayout';
+import Auth from './routes/Auth';
+import VerifyEmail from './routes/VerifyEmail';
+import Home from './routes/Home';
+import Catalog from './routes/Catalog';
+import About from './routes/About';
+
+const router = createBrowserRouter([
+  { path: '/', element: <Auth /> },
+  { path: '/verify-email', element: <VerifyEmail /> },
+  {
+    element: <ProtectedRoute />,
+    children: [
+      {
+        element: <AuthedLayout />,
+        children: [
+          { path: '/home', element: <Home /> },
+          { path: '/catalog', element: <Catalog /> },
+          { path: '/about', element: <About /> },
+        ],
+      },
+    ],
+  },
+  { path: '*', element: <Navigate to="/" replace /> },
+]);
+
 export default function App() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50">
-      <h1 className="text-3xl font-semibold text-slate-800">
-        KitchenPal — Stage 1 foundation ready
-      </h1>
-    </div>
+    <AuthProvider>
+      <RouterProvider router={router} />
+    </AuthProvider>
   );
 }
