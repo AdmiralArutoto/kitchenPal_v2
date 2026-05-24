@@ -31,7 +31,7 @@ export default function AddRecipeModal({ onClose }: Props) {
   }
 
   return (
-    <Modal open ariaLabel="Add new recipe" onClose={onClose}>
+    <Modal open ariaLabel="Add new recipe" onClose={onClose} size="lg">
       <RecipeEditForm
         title="Add New Recipe"
         subtitle="Create a new recipe for your collection"

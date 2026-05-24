@@ -6,6 +6,7 @@ type Props = {
   children: ReactNode;
   variant?: Variant;
   onRemove?: () => void;
+  onClick?: () => void;
 };
 
 const variantClasses: Record<Variant, string> = {
@@ -15,9 +16,23 @@ const variantClasses: Record<Variant, string> = {
   'recipe-tag': 'h-6 rounded-sm bg-bg-toggle text-text-body px-2 text-xs font-normal',
 };
 
-export default function Pill({ children, variant = 'default', onRemove }: Props) {
+export default function Pill({ children, variant = 'default', onRemove, onClick }: Props) {
+  const base = `inline-flex items-center gap-1 ${variantClasses[variant]}`;
+
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className={`${base} cursor-pointer transition-colors hover:bg-bg-toggle/70 hover:ring-1 hover:ring-border-subtle focus:outline-none focus-visible:ring-2 focus-visible:ring-primary`}
+      >
+        {children}
+      </button>
+    );
+  }
+
   return (
-    <span className={`inline-flex items-center gap-1 ${variantClasses[variant]}`}>
+    <span className={base}>
       {children}
       {onRemove && (
         <button

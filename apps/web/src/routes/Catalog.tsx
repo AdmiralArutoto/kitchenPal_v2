@@ -139,7 +139,15 @@ export default function Catalog() {
 
       {/* Recipe modal */}
       {selectedRecipe && (
-        <RecipeModal recipe={selectedRecipe} onClose={() => setSelectedRecipe(null)} />
+        <RecipeModal
+          recipe={selectedRecipe}
+          onClose={() => setSelectedRecipe(null)}
+          onTagClick={(tag) => {
+            setSelectedTags([tag]);
+            setSearchInput('');
+            setSelectedRecipe(null);
+          }}
+        />
       )}
 
       {/* Add Recipe modal */}

@@ -12,13 +12,14 @@ import RecipeEditForm, { type RecipeFormValues } from './RecipeEditForm';
 type Props = {
   recipe: Recipe;
   onClose: () => void;
+  onTagClick?: (tag: string) => void;
 };
 
 type Mode = 'idle' | 'modifying' | 'editing';
 
 // Recipe detail modal. View-only display with live serving scaler.
 // Edit + Delete go through cached mutations (optimistic). Modify with AI is local until Approve.
-export default function RecipeModal({ recipe: initialRecipe, onClose }: Props) {
+export default function RecipeModal({ recipe: initialRecipe, onClose, onTagClick }: Props) {
   const [recipe, setRecipe] = useState<Recipe>(initialRecipe);
   const [mode, setMode] = useState<Mode>('idle');
   const [comment, setComment] = useState('');
@@ -128,7 +129,7 @@ export default function RecipeModal({ recipe: initialRecipe, onClose }: Props) {
 
   if (mode === 'editing') {
     return (
-      <Modal open ariaLabel={`Edit ${recipe.name}`} onClose={onClose}>
+      <Modal open ariaLabel={`Edit ${recipe.name}`} onClose={onClose} size="lg">
         <RecipeEditForm
           title="Edit Recipe"
           initialValues={{
@@ -154,189 +155,206 @@ export default function RecipeModal({ recipe: initialRecipe, onClose }: Props) {
   }
 
   return (
-    <Modal open ariaLabel={recipe.name} onClose={onClose}>
-      <div className="flex flex-col gap-6 px-6 pb-6 pt-6">
-        {/* Header */}
-        <div className="flex items-start justify-between gap-4 pr-8">
-          <div className="flex flex-col gap-2">
-            <h2 className="text-2xl font-semibold leading-8 text-text-default">{recipe.name}</h2>
-            {recipe.description && (
-              <p className="text-base text-text-placeholder">{recipe.description}</p>
+    <Modal open ariaLabel={recipe.name} onClose={onClose} size="lg">
+      <div className="relative flex max-h-[85vh] flex-col">
+        {/* Vertical divider — top aligns with image top edge (p-5 = 20px from modal top),
+            bottom aligns with action buttons' bottom edge (p-5 = 20px from modal bottom). */}
+        <div
+          className="pointer-events-none absolute inset-y-5 left-1/2 hidden w-px bg-black/10 md:block"
+          aria-hidden="true"
+        />
+        {/* Unified scroll area — both columns share a single slim scrollbar at the card's outer edge */}
+        <div className="scrollbar-thin grid grid-cols-1 overflow-y-auto md:grid-cols-2">
+          {/* Left column — info + instructions */}
+          <div className="flex flex-col gap-4 p-5">
+            <header className="flex flex-col gap-2">
+              <h2 className="text-2xl font-semibold leading-8 text-text-default">{recipe.name}</h2>
+              {recipe.description && (
+                <p className="text-base leading-6 text-text-placeholder">{recipe.description}</p>
+              )}
+            </header>
+
+            {/* Meta row */}
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-black/10 pb-4">
+              {recipe.cookingTime != null && (
+                <span className="inline-flex items-center gap-2 text-sm text-text-body">
+                  <ClockIcon /> {recipe.cookingTime} min
+                </span>
+              )}
+              <span className="inline-flex items-center gap-3 text-sm text-text-body">
+                <UsersIcon />
+                <ServingScaler value={servingsOverride} onChange={setServingsOverride} />
+              </span>
+            </div>
+
+            {/* Tags — click to filter catalog by this tag */}
+            {recipe.tags.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {recipe.tags.map((tag) => (
+                  <Pill
+                    key={tag}
+                    onClick={onTagClick ? () => onTagClick(tag) : undefined}
+                  >
+                    {tag}
+                  </Pill>
+                ))}
+              </div>
+            )}
+
+            {/* Instructions */}
+            {recipe.steps.length > 0 && (
+              <section className="flex flex-col gap-3">
+                <h3 className="text-lg font-semibold text-text-default">Instructions</h3>
+                <ol className="flex flex-col gap-3">
+                  {recipe.steps.map((step, i) => (
+                    <li key={i} className="flex gap-3">
+                      <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent-soft text-xs font-medium text-accent-text">
+                        {i + 1}
+                      </span>
+                      <span className="text-sm leading-5 text-text-body">{step}</span>
+                    </li>
+                  ))}
+                </ol>
+              </section>
             )}
           </div>
-          {recipe.emoji && (
-            <span className="shrink-0 text-6xl leading-none" aria-hidden="true">
-              {recipe.emoji}
-            </span>
-          )}
-        </div>
 
-        {/* Meta row */}
-        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-black/10 pb-4">
-          {recipe.cookingTime != null && (
-            <span className="inline-flex items-center gap-2 text-sm text-text-body">
-              <ClockIcon /> {recipe.cookingTime} min
-            </span>
-          )}
-          <span className="inline-flex items-center gap-3 text-sm text-text-body">
-            <UsersIcon />
-            <ServingScaler value={servingsOverride} onChange={setServingsOverride} />
-          </span>
-        </div>
+          {/* Right column — image + ingredients + (optional modify panel) */}
+          <div className="flex flex-col gap-4 p-5">
+            {/* Image placeholder — emoji over gradient */}
+            <div
+              className="flex h-48 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-[linear-gradient(139deg,var(--color-accent-soft)_0%,var(--color-card-blob-pink)_50%,var(--color-card-blob-yellow)_100%)]"
+              aria-hidden="true"
+            >
+              <span className="text-7xl">{recipe.emoji ?? '🍽️'}</span>
+            </div>
 
-        {/* Tags */}
-        {recipe.tags.length > 0 && (
-          <div className="flex flex-wrap gap-2">
-            {recipe.tags.map((tag) => (
-              <Pill key={tag}>{tag}</Pill>
-            ))}
-          </div>
-        )}
-
-        {/* Ingredients (compact table) */}
-        {recipe.ingredients.length > 0 && (
-          <section className="flex flex-col gap-3">
-            <h3 className="text-lg font-semibold text-text-default">Ingredients</h3>
-            <div className="overflow-hidden rounded-lg border border-border-subtle">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border-subtle bg-bg-page">
-                    <th className="w-[40%] px-3 py-1.5 text-left text-xs font-medium text-text-body">
-                      Amount
-                    </th>
-                    <th className="px-3 py-1.5 text-left text-xs font-medium text-text-body">
-                      Ingredient
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {recipe.ingredients.map((ing, i) => (
-                    <tr
-                      key={`${ing.name}-${i}`}
-                      className="border-b border-bg-toggle last:border-b-0"
-                    >
-                      <td className="px-3 py-1.5 text-text-muted">
-                        <span className="font-medium">{formatAmount(scaleAmount(ing.amount))}</span>
-                        {ing.unit && ` ${ing.unit}`}
-                      </td>
-                      <td className="px-3 py-1.5 text-text-body">{ing.name}</td>
+            {/* Ingredients table */}
+            {recipe.ingredients.length > 0 && (
+              <div className="overflow-hidden rounded-lg border border-border-subtle">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border-subtle bg-bg-page">
+                      <th className="w-[40%] px-3 py-2 text-left text-xs font-medium text-text-body">
+                        Amount
+                      </th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-text-body">
+                        Ingredient
+                      </th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
-        )}
+                  </thead>
+                  <tbody>
+                    {recipe.ingredients.map((ing, i) => (
+                      <tr
+                        key={`${ing.name}-${i}`}
+                        className="border-b border-bg-toggle last:border-b-0"
+                      >
+                        <td className="px-3 py-2 text-text-muted">
+                          <span className="font-medium">
+                            {formatAmount(scaleAmount(ing.amount))}
+                          </span>
+                          {ing.unit && ` ${ing.unit}`}
+                        </td>
+                        <td className="px-3 py-2 text-text-body">{ing.name}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
 
-        {/* Instructions */}
-        {recipe.steps.length > 0 && (
-          <section className="flex flex-col gap-3">
-            <h3 className="text-lg font-semibold text-text-default">Instructions</h3>
-            <ol className="flex flex-col gap-3">
-              {recipe.steps.map((step, i) => (
-                <li key={i} className="flex gap-3">
-                  <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent-soft text-xs font-medium text-accent-text">
-                    {i + 1}
-                  </span>
-                  <span className="text-sm leading-5 text-text-body">{step}</span>
-                </li>
-              ))}
-            </ol>
-          </section>
-        )}
+            {/* Modify with AI panel */}
+            {mode === 'modifying' && (
+              <section className="flex flex-col gap-3 rounded-[10px] border border-accent-peach bg-accent-bg-soft p-4">
+                <h4 className="inline-flex items-center gap-2 text-sm font-medium text-accent-text">
+                  <SparkleIcon /> Modify with AI
+                </h4>
+                <textarea
+                  value={comment}
+                  onChange={(e) => setComment(e.target.value)}
+                  placeholder="e.g., Make it dairy-free, simplify the steps, add more vegetables..."
+                  disabled={busy === 'apply'}
+                  rows={3}
+                  className="w-full resize-none rounded-lg border border-border-subtle bg-bg-card px-3 py-2 text-sm text-text-default placeholder:text-text-placeholder focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-60"
+                />
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={applyModification}
+                    disabled={!comment.trim() || busy === 'apply'}
+                  >
+                    {busy === 'apply' ? 'Modifying…' : 'Apply Modifications'}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={cancelModify}
+                    disabled={busy === 'apply'}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </section>
+            )}
 
-        {/* Modify with AI panel */}
-        {mode === 'modifying' && (
-          <section className="flex flex-col gap-3 rounded-[10px] border border-accent-peach bg-accent-bg-soft p-4">
-            <h4 className="inline-flex items-center gap-2 text-sm font-medium text-accent-text">
-              <SparkleIcon /> Modify with AI
-            </h4>
-            <textarea
-              value={comment}
-              onChange={(e) => setComment(e.target.value)}
-              placeholder="e.g., Make it dairy-free, simplify the steps, add more vegetables..."
-              disabled={busy === 'apply'}
-              rows={3}
-              className="w-full resize-none rounded-lg border border-border-subtle bg-bg-card px-3 py-2 text-sm text-text-default placeholder:text-text-placeholder focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-60"
-            />
-            <div className="flex gap-2">
-              <Button
-                type="button"
-                size="sm"
-                onClick={applyModification}
-                disabled={!comment.trim() || busy === 'apply'}
-              >
-                {busy === 'apply' ? 'Modifying…' : 'Apply Modifications'}
-              </Button>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={cancelModify}
-                disabled={busy === 'apply'}
-              >
-                Cancel
-              </Button>
-            </div>
-          </section>
-        )}
+            {error && <p className="text-sm text-danger">{error}</p>}
+          </div>
+        </div>
 
-        {error && <p className="text-sm text-danger">{error}</p>}
-
-        {/* Action row — swaps when in modify mode */}
-        <div className="flex justify-end gap-2 border-t border-black/10 pt-4">
-          {mode === 'idle' ? (
-            <>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={startModify}
-              >
-                <SparkleIcon /> <span className="ml-2">Modify with AI</span>
-              </Button>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={() => {
-                  setError(null);
-                  setMode('editing');
-                }}
-              >
-                <PencilIcon /> <span className="ml-2">Edit</span>
-              </Button>
-              <button
-                type="button"
-                onClick={handleDelete}
-                className="inline-flex h-8 items-center gap-2 rounded-lg border border-border-subtle bg-bg-card px-3 text-sm font-medium text-danger hover:bg-bg-toggle"
-              >
-                <TrashIcon />
-                <span>Delete</span>
-              </button>
-            </>
-          ) : (
-            <>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={cancelModify}
-                disabled={busy === 'apply'}
-              >
-                Discard
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                onClick={approveModification}
-                disabled={!isModified || busy === 'apply'}
-                title={!isModified ? 'Apply a modification first to enable Approve' : undefined}
-              >
-                Approve
-              </Button>
-            </>
-          )}
+        {/* Sticky action footer — mirrors the right column width so it aligns with the ingredient table */}
+        <div className="grid grid-cols-1 md:grid-cols-2">
+          <div className="hidden md:block" />
+          <div className="flex flex-wrap justify-end gap-2 p-5">
+            {mode === 'idle' ? (
+              <>
+                <Button type="button" variant="secondary" size="sm" onClick={startModify}>
+                  <SparkleIcon /> <span className="ml-2">Modify with AI</span>
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    setError(null);
+                    setMode('editing');
+                  }}
+                >
+                  <PencilIcon /> <span className="ml-2">Edit</span>
+                </Button>
+                <button
+                  type="button"
+                  onClick={handleDelete}
+                  className="inline-flex h-8 items-center gap-2 rounded-lg border border-border-subtle bg-bg-card px-3 text-sm font-medium text-danger hover:bg-bg-toggle"
+                >
+                  <TrashIcon />
+                  <span>Delete</span>
+                </button>
+              </>
+            ) : (
+              <>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={cancelModify}
+                  disabled={busy === 'apply'}
+                >
+                  Discard
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={approveModification}
+                  disabled={!isModified || busy === 'apply'}
+                  title={!isModified ? 'Apply a modification first to enable Approve' : undefined}
+                >
+                  Approve
+                </Button>
+              </>
+            )}
+          </div>
         </div>
       </div>
     </Modal>

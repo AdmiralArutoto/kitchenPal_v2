@@ -25,6 +25,7 @@ type Props = {
   submitLabel?: string;
   title?: string;
   subtitle?: string;
+  externalError?: string | null;
 };
 
 type IngredientRow = { amountText: string; name: string };
@@ -40,6 +41,7 @@ export default function RecipeEditForm({
   submitLabel = 'Save',
   title,
   subtitle,
+  externalError,
 }: Props) {
   const [name, setName] = useState(initialValues.name);
   const [description, setDescription] = useState(initialValues.description ?? '');
@@ -161,210 +163,245 @@ export default function RecipeEditForm({
     });
   }
 
+  const displayError = error ?? externalError ?? null;
+
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-5 px-6 pb-6 pt-6">
-      {(title || subtitle) && (
-        <header className="flex flex-col gap-2 pr-8">
-          {title && (
-            <h2 className="text-lg font-semibold leading-tight text-text-default">{title}</h2>
+    <form onSubmit={handleSubmit} className="relative flex max-h-[85vh] flex-col">
+      {/* Vertical divider — matches RecipeModal layout (image top → footer button bottom) */}
+      <div
+        className="pointer-events-none absolute inset-y-5 left-1/2 hidden w-px bg-black/10 md:block"
+        aria-hidden="true"
+      />
+
+      {/* Unified scroll area */}
+      <div className="scrollbar-thin grid grid-cols-1 overflow-y-auto md:grid-cols-2">
+        {/* Left column — title + recipe fields + tags + steps */}
+        <div className="flex flex-col gap-4 p-5">
+          {(title || subtitle) && (
+            <header className="flex flex-col gap-1">
+              {title && (
+                <h2 className="text-lg font-semibold leading-tight text-text-default">{title}</h2>
+              )}
+              {subtitle && <p className="text-sm text-text-placeholder">{subtitle}</p>}
+            </header>
           )}
-          {subtitle && <p className="text-sm text-text-placeholder">{subtitle}</p>}
-        </header>
-      )}
 
-      <FormField label="Recipe Name">
-        {({ id }) => (
-          <Input
-            id={id}
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="E.g., Grandma's Apple Pie"
-            required
-          />
-        )}
-      </FormField>
+          <FormField label="Recipe Name">
+            {({ id }) => (
+              <Input
+                id={id}
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="E.g., Grandma's Apple Pie"
+                required
+              />
+            )}
+          </FormField>
 
-      <FormField label="Description">
-        {({ id }) => (
-          <Textarea
-            id={id}
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Brief description of your recipe"
-            rows={2}
-          />
-        )}
-      </FormField>
-
-      <div className="grid grid-cols-2 gap-4">
-        <FormField label="Cooking Time">
-          {({ id }) => (
-            <Input
-              id={id}
-              type="number"
-              inputMode="numeric"
-              min={1}
-              value={cookingTime}
-              onChange={(e) => setCookingTime(e.target.value)}
-              placeholder="30"
-            />
-          )}
-        </FormField>
-        <FormField label="Servings">
-          {({ id }) => (
-            <Input
-              id={id}
-              type="number"
-              inputMode="numeric"
-              min={1}
-              value={servings}
-              onChange={(e) => setServings(e.target.value)}
-            />
-          )}
-        </FormField>
-      </div>
-
-      {/* Ingredients */}
-      <div className="flex flex-col gap-2">
-        <label className="text-sm font-medium text-text-default">Ingredients</label>
-        <div className="overflow-hidden rounded-lg border border-border-subtle">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border-subtle bg-bg-page">
-                <th className="w-[36%] px-3 py-1.5 text-left text-xs font-medium text-text-body">
-                  Amount
-                </th>
-                <th className="px-3 py-1.5 text-left text-xs font-medium text-text-body">
-                  Ingredient
-                </th>
-                <th className="w-10" />
-              </tr>
-            </thead>
-            <tbody>
-              {ingredients.map((row, i) => (
-                <tr key={i} className="border-b border-bg-toggle last:border-b-0">
-                  <td className="px-2 py-1.5">
-                    <input
-                      type="text"
-                      value={row.amountText}
-                      onChange={(e) => updateIngredient(i, { amountText: e.target.value })}
-                      placeholder="1 cup"
-                      className="w-full rounded bg-bg-input px-2 py-1 text-sm text-text-default placeholder:text-text-placeholder focus:outline-none focus:ring-2 focus:ring-primary"
-                    />
-                  </td>
-                  <td className="px-2 py-1.5">
-                    <input
-                      type="text"
-                      value={row.name}
-                      onChange={(e) => updateIngredient(i, { name: e.target.value })}
-                      placeholder="Flour"
-                      className="w-full rounded bg-bg-input px-2 py-1 text-sm text-text-default placeholder:text-text-placeholder focus:outline-none focus:ring-2 focus:ring-primary"
-                    />
-                  </td>
-                  <td className="pr-2">
-                    <button
-                      type="button"
-                      onClick={() => removeIngredient(i)}
-                      aria-label="Remove ingredient"
-                      className="inline-flex h-6 w-6 items-center justify-center rounded text-text-muted hover:bg-bg-toggle hover:text-danger"
-                    >
-                      <XIcon />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <button
-            type="button"
-            onClick={addIngredient}
-            className="w-full border-t border-border-subtle px-3 py-2 text-left text-sm font-medium text-primary hover:bg-bg-page"
-          >
-            + Add ingredient
-          </button>
-        </div>
-      </div>
-
-      {/* Instructions */}
-      <div className="flex flex-col gap-2">
-        <label className="text-sm font-medium text-text-default">Instructions</label>
-        <div className="flex flex-col gap-2">
-          {steps.map((step, i) => (
-            <div key={i} className="flex items-start gap-3">
-              <span className="mt-1.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent-soft text-xs font-medium text-accent-text">
-                {i + 1}
-              </span>
+          <FormField label="Description">
+            {({ id }) => (
               <Textarea
-                value={step}
-                onChange={(e) => updateStep(i, e.target.value)}
-                placeholder="First, preheat the oven to..."
+                id={id}
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Brief description of your recipe"
                 rows={2}
               />
+            )}
+          </FormField>
+
+          <div className="grid grid-cols-2 gap-3">
+            <FormField label="Cooking Time">
+              {({ id }) => (
+                <Input
+                  id={id}
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  value={cookingTime}
+                  onChange={(e) => setCookingTime(e.target.value)}
+                  placeholder="30"
+                />
+              )}
+            </FormField>
+            <FormField label="Servings">
+              {({ id }) => (
+                <Input
+                  id={id}
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  value={servings}
+                  onChange={(e) => setServings(e.target.value)}
+                />
+              )}
+            </FormField>
+          </div>
+
+          {/* Tags */}
+          <div className="flex flex-col gap-2">
+            <label className="text-sm font-medium text-text-default">Tags</label>
+            {tags.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {tags.map((t) => (
+                  <Pill key={t} onRemove={() => removeTag(t)}>
+                    {t}
+                  </Pill>
+                ))}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <Input
+                value={tagInput}
+                onChange={(e) => setTagInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    commitTagInput();
+                  }
+                }}
+                placeholder="e.g., Italian, Quick, Vegetarian"
+              />
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={commitTagInput}
+                disabled={!tagInput.trim()}
+              >
+                Add
+              </Button>
+            </div>
+          </div>
+
+          {/* Instructions */}
+          <div className="flex flex-col gap-2">
+            <label className="text-sm font-medium text-text-default">Instructions</label>
+            <div className="flex flex-col gap-2">
+              {steps.map((step, i) => (
+                <div key={i} className="flex items-start gap-3">
+                  <span className="mt-1.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent-soft text-xs font-medium text-accent-text">
+                    {i + 1}
+                  </span>
+                  <Textarea
+                    value={step}
+                    onChange={(e) => updateStep(i, e.target.value)}
+                    placeholder="First, preheat the oven to..."
+                    rows={2}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeStep(i)}
+                    aria-label="Remove step"
+                    className="mt-1.5 inline-flex h-6 w-6 items-center justify-center rounded text-text-muted hover:bg-bg-toggle hover:text-danger"
+                  >
+                    <XIcon />
+                  </button>
+                </div>
+              ))}
               <button
                 type="button"
-                onClick={() => removeStep(i)}
-                aria-label="Remove step"
-                className="mt-1.5 inline-flex h-6 w-6 items-center justify-center rounded text-text-muted hover:bg-bg-toggle hover:text-danger"
+                onClick={addStep}
+                className="self-start text-sm font-medium text-primary hover:underline"
               >
-                <XIcon />
+                + Add step
               </button>
             </div>
-          ))}
-          <button
-            type="button"
-            onClick={addStep}
-            className="self-start text-sm font-medium text-primary hover:underline"
+          </div>
+        </div>
+
+        {/* Right column — image placeholder + ingredients table editor */}
+        <div className="flex flex-col gap-4 p-5">
+          {/* Emoji + gradient hero (mirrors RecipeModal view) */}
+          <div
+            className="flex h-48 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-[linear-gradient(139deg,var(--color-accent-soft)_0%,var(--color-card-blob-pink)_50%,var(--color-card-blob-yellow)_100%)]"
+            aria-hidden="true"
           >
-            + Add step
-          </button>
+            <span className="text-7xl">{initialValues.emoji ?? '🍽️'}</span>
+          </div>
+
+          {/* Ingredients editor */}
+          <div className="flex flex-col gap-2">
+            <label className="text-sm font-medium text-text-default">Ingredients</label>
+            <div className="overflow-hidden rounded-lg border border-border-subtle">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border-subtle bg-bg-page">
+                    <th className="w-[36%] px-3 py-1.5 text-left text-xs font-medium text-text-body">
+                      Amount
+                    </th>
+                    <th className="px-3 py-1.5 text-left text-xs font-medium text-text-body">
+                      Ingredient
+                    </th>
+                    <th className="w-10" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {ingredients.map((row, i) => (
+                    <tr key={i} className="border-b border-bg-toggle last:border-b-0">
+                      <td className="px-2 py-1.5">
+                        <input
+                          type="text"
+                          value={row.amountText}
+                          onChange={(e) =>
+                            updateIngredient(i, { amountText: e.target.value })
+                          }
+                          placeholder="1 cup"
+                          className="w-full rounded bg-bg-input px-2 py-1 text-sm text-text-default placeholder:text-text-placeholder focus:outline-none focus:ring-2 focus:ring-primary"
+                        />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <input
+                          type="text"
+                          value={row.name}
+                          onChange={(e) => updateIngredient(i, { name: e.target.value })}
+                          placeholder="Flour"
+                          className="w-full rounded bg-bg-input px-2 py-1 text-sm text-text-default placeholder:text-text-placeholder focus:outline-none focus:ring-2 focus:ring-primary"
+                        />
+                      </td>
+                      <td className="pr-2">
+                        <button
+                          type="button"
+                          onClick={() => removeIngredient(i)}
+                          aria-label="Remove ingredient"
+                          className="inline-flex h-6 w-6 items-center justify-center rounded text-text-muted hover:bg-bg-toggle hover:text-danger"
+                        >
+                          <XIcon />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <button
+                type="button"
+                onClick={addIngredient}
+                className="w-full border-t border-border-subtle px-3 py-2 text-left text-sm font-medium text-primary hover:bg-bg-page"
+              >
+                + Add ingredient
+              </button>
+            </div>
+          </div>
+
+          {displayError && (
+            <p className="text-sm text-danger" role="alert">
+              {displayError}
+            </p>
+          )}
         </div>
       </div>
 
-      {/* Tags */}
-      <div className="flex flex-col gap-2">
-        <label className="text-sm font-medium text-text-default">Tags</label>
-        {tags.length > 0 && (
-          <div className="flex flex-wrap gap-2">
-            {tags.map((t) => (
-              <Pill key={t} onRemove={() => removeTag(t)}>
-                {t}
-              </Pill>
-            ))}
-          </div>
-        )}
-        <div className="flex gap-2">
-          <Input
-            value={tagInput}
-            onChange={(e) => setTagInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                commitTagInput();
-              }
-            }}
-            placeholder="e.g., Italian, Quick, Vegetarian"
-          />
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            onClick={commitTagInput}
-            disabled={!tagInput.trim()}
-          >
-            Add
+      {/* Sticky action footer — mirrors right column width */}
+      <div className="grid grid-cols-1 md:grid-cols-2">
+        <div className="hidden md:block" />
+        <div className="flex flex-wrap justify-end gap-2 p-5">
+          <Button type="button" variant="secondary" onClick={onCancel} disabled={saving}>
+            Cancel
+          </Button>
+          <Button type="submit" disabled={saving}>
+            {saving ? 'Saving…' : submitLabel}
           </Button>
         </div>
-      </div>
-
-      {error && <p className="text-sm text-danger">{error}</p>}
-
-      <div className="flex justify-end gap-2 border-t border-black/10 pt-4">
-        <Button type="button" variant="secondary" onClick={onCancel} disabled={saving}>
-          Cancel
-        </Button>
-        <Button type="submit" disabled={saving}>
-          {saving ? 'Saving…' : submitLabel}
-        </Button>
       </div>
     </form>
   );

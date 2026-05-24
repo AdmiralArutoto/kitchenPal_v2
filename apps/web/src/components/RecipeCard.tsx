@@ -13,20 +13,28 @@ export default function RecipeCard({ recipe, onClick }: Props) {
     <button
       type="button"
       onClick={onClick}
-      className="overflow-hidden rounded-2xl border border-border-subtle bg-bg-card text-left transition-shadow hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+      className="flex h-full flex-col overflow-hidden rounded-2xl border border-border-subtle bg-bg-card text-left transition-shadow hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
     >
       <div
-        className="flex h-48 items-center justify-center bg-[linear-gradient(139deg,var(--color-accent-soft)_0%,var(--color-card-blob-pink)_50%,var(--color-card-blob-yellow)_100%)]"
+        className="flex h-48 shrink-0 items-center justify-center bg-[linear-gradient(139deg,var(--color-accent-soft)_0%,var(--color-card-blob-pink)_50%,var(--color-card-blob-yellow)_100%)]"
         aria-hidden="true"
       >
         <span className="text-7xl">{recipe.emoji ?? '🍽️'}</span>
       </div>
-      <div className="flex flex-col gap-3 p-4">
+      <div className="flex flex-1 flex-col gap-3 p-4">
         <div className="flex flex-col gap-1">
-          <h3 className="line-clamp-1 text-base font-semibold text-text-default">{recipe.name}</h3>
-          {recipe.description && (
-            <p className="line-clamp-2 h-10 text-sm text-text-muted">{recipe.description}</p>
-          )}
+          <h3
+            className="line-clamp-1 text-base font-semibold text-text-default"
+            title={recipe.name}
+          >
+            {recipe.name}
+          </h3>
+          <p
+            className="line-clamp-2 h-10 text-sm text-text-muted"
+            title={recipe.description ?? undefined}
+          >
+            {recipe.description}
+          </p>
         </div>
         <div className="flex items-center gap-3 text-sm text-text-muted">
           {recipe.cookingTime != null && (
@@ -40,15 +48,16 @@ export default function RecipeCard({ recipe, onClick }: Props) {
             </span>
           )}
         </div>
-        {recipe.tags.length > 0 && (
-          <div className="flex flex-wrap gap-1">
-            {recipe.tags.map((tag) => (
-              <Pill key={tag} variant="recipe-tag">
-                {tag}
-              </Pill>
-            ))}
-          </div>
-        )}
+        <div
+          className="flex h-6 gap-1 overflow-hidden"
+          title={recipe.tags.length > 0 ? recipe.tags.join(', ') : undefined}
+        >
+          {recipe.tags.map((tag) => (
+            <span key={tag} className="shrink-0">
+              <Pill variant="recipe-tag">{tag}</Pill>
+            </span>
+          ))}
+        </div>
       </div>
     </button>
   );
