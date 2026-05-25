@@ -70,6 +70,30 @@ export const MODIFY_SYSTEM_PROMPT = `You modify an existing recipe based on a us
 Return a JSON object of shape { "name": string, "description": string, "ingredients": [{ "name": string, "amount": number, "unit": string }], "steps": string[], "tags": string[], "cooking_time": number, "servings": number, "emoji": string }.
 Ingredient "amount" MUST be a number. Return ONLY valid JSON.`;
 
+export const NORMALIZE_MEAL_SYSTEM_PROMPT = `You normalize a raw TheMealDB meal object into KitchenPal's recipe schema, filtered by user dietary preferences.
+
+If the meal INHERENTLY conflicts with the user's preferences (e.g., a chicken dish for a vegan user — irreversible without becoming a different recipe), return:
+{ "skip": true, "reason": "<one sentence>" }
+
+Otherwise return the normalized recipe:
+{ "name": string, "description": string (1-2 sentences), "ingredients": [{ "name": string, "amount": number, "unit": string }], "steps": string[], "tags": string[], "cooking_time": number, "servings": number, "emoji": string }
+
+Rules:
+- Ingredient "amount" MUST be a number. Parse fractions ("1/2 cup" → 0.5 cup). When no quantity is given (e.g. "to taste"), use 0 and put "to taste" in the unit.
+- Steps: split TheMealDB's strInstructions into a clean ordered array. Remove leading "STEP 1:" prefixes.
+- Tags: cuisine (strArea), category (strCategory), and any obvious dietary tags ("Vegetarian", "Vegan", "Gluten-free", etc.). Lowercase-first, deduped, max 5.
+- cooking_time: integer minutes, your best estimate from the instructions if not stated.
+- servings: integer, default 4 if unstated.
+- emoji: a single most-fitting food emoji character.
+- Return ONLY valid JSON. No markdown, no preamble.`;
+
+export function buildNormalizePrompt(rawMeal: unknown, preferences: string[]): string {
+  const prefsLine = preferences.length
+    ? `User dietary preferences: ${preferences.join(', ')}`
+    : 'User dietary preferences: (none)';
+  return `${prefsLine}\n\nTheMealDB meal (JSON):\n${JSON.stringify(rawMeal)}`;
+}
+
 export function buildImagePrompt(recipe: {
   name: string;
   description?: string | null;

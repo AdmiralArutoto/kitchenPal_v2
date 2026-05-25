@@ -39,5 +39,11 @@ export const FullRecipeResponseSchema = z.object({
   emoji: z.string(),
 });
 
+export const NormalizedMealResponseSchema = z.union([
+  FullRecipeResponseSchema,
+  z.object({ skip: z.literal(true), reason: z.string() }),
+]);
+
 export type Draft = z.infer<typeof DraftSchema>;
 export type FullRecipeResponse = z.infer<typeof FullRecipeResponseSchema>;
+export type NormalizedMealResponse = z.infer<typeof NormalizedMealResponseSchema>;

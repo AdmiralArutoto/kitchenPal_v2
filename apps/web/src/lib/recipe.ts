@@ -9,6 +9,7 @@ export type RecipeBody = {
   cookingTime: number | null;
   servings: number | null;
   emoji: string | null;
+  imageUrl?: string | null;
   source: RecipeSource;
 };
 

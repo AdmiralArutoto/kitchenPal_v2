@@ -11,8 +11,8 @@ This file is for what doesn't belong in the spec — decisions made during imple
 ## Current State
 
 ```
-Status: Recipe images shipped (Stage 8). Supabase Storage `recipe-images` bucket (public, UUID keys), OpenAI `gpt-image-1-mini` @ medium quality, multipart user uploads. Three image mutation hooks (generate/upload/remove) follow the existing cache-patch pattern. AI recipes auto-generate an image in the background after Approve; manual recipes get a picker in AddRecipeModal (Upload | Generate with AI | Skip); RecipeModal view mode has Regenerate/Upload/Remove. RecipeCard + RecipeModal hero fall back to emoji-gradient when imageUrl is null. ImageProvider interface ready for Flux 1.1 Pro swap via env var. Build clean; 59/59 backend tests green.
-Last session: Session 23 — Stage 8 recipe images (DALL-E 3 + storage + uploads).
+Status: Daily Recipe Rotation shipped (Stage 9). Home now hosts a "Today's Recipes" feed of 6 cards per user per UTC day, generated lazily on first GET /api/recommendations and cached in the new `daily_batches` table (unique [userId, batchDate]). Each card has Save / Modify / Dismiss actions. Replaces the mock Featured Recipes section. Reuses Stage 8 image pipeline (gpt-image-1-mini) so cards display with real food photography on first paint. Build clean; 65/65 backend tests green. Three image mutation hooks (generate/upload/remove) follow the existing cache-patch pattern. AI recipes auto-generate an image in the background after Approve; manual recipes get a picker in AddRecipeModal (Upload | Generate with AI | Skip); RecipeModal view mode has Regenerate/Upload/Remove. RecipeCard + RecipeModal hero fall back to emoji-gradient when imageUrl is null. ImageProvider interface ready for Flux 1.1 Pro swap via env var. Build clean; 59/59 backend tests green.
+Last session: Session 24 — Stage 9 daily recipe rotation (TheMealDB + OpenAI normalization + auto images).
 Next action: Stage 7 (Vercel deploy) still parked. No outstanding in-app TODOs; awaiting next user-proposed feature/polish.
 Open questions: None active.
 ```
@@ -275,6 +275,24 @@ DALL-E 3 latency (10-30s) exceeds Vercel hobby's 10s function timeout. Local dev
 
 **[2026-05-25] — `RecipeEditForm` has an optional `imageSlot` override**
 The form's right-column hero defaults to the emoji-gradient block (used by RecipeModal edit mode + FinalRecipePanel edit). AddRecipeModal passes an `imageSlot` ReactNode that replaces the hero with its image-picker UI (Upload/Generate with AI/Skip + preview). This avoids forking the form for "new with image picker" vs "edit without one". RecipeModal edit mode does NOT pass imageSlot because image controls live in view mode — image management is decoupled from text-field editing.
+
+**[2026-05-26] — Daily rotation: lazy, date-keyed, 6 cards, reuses image pipeline**
+`GET /api/recommendations` returns `{ batchDate, recipes[6] }`. Backend looks up `DailyBatch` for `(userId, today=UTC YYYY-MM-DD)`. Cache hit → return. Cache miss → 6 parallel slots: TheMealDB random.php → OpenAI normalize (with skip+retry on dietary conflict, max 3 retries) → gpt-image-1-mini → upload to `daily-batches/{userId}/{batchDate}-{slot}-{uuid}.png`. Persist via `dailyBatch.create`; race on the unique index falls back to re-reading the winning row (P2002 catch). First-of-day request takes ~30-60s; subsequent are instant. Cost per batch: ~6 chat + 6 images ≈ **$0.09**.
+
+**[2026-05-26] — Daily-rotation Save reuses the batch's imageUrl (no re-upload, no copy)**
+`RecommendationCard.handleSave` POSTs the recipe to `/api/recipes` with `source: 'daily_rotation'` AND passes the batch's `imageUrl` through. The new Recipe row points to the same storage blob the DailyBatch row already references. No `imageWork` is set on `useCreateRecipe` (the image is already in storage). On day rollover the DailyBatch row is replaced but the blob stays — orphaned blobs are tiny and ignored at MVP scale (Stage 9 deferred list).
+
+**[2026-05-26] — `recipes.imageUrl` is optional on `RecipeBody` frontend type**
+Added `imageUrl?: string | null` to `apps/web/src/lib/recipe.ts` `RecipeBody`. Existing call sites (AI approve, manual create, edit) don't pass it (defaults to null on the backend); daily-rotation Save does. The backend Zod `RecipeBodySchema` already accepted it from Stage 8.
+
+**[2026-05-26] — Frontend recommendations query key embeds today's UTC date**
+`useRecommendations` uses `queryKey: ['recommendations', todayUTC()]`. A new UTC day produces a different cache key → automatic refetch on the next mount. Old date entries get garbage-collected on cacheTime expiry. Trade-off: if the user keeps Home open past midnight, they need to refresh to get today's batch — acceptable for MVP. Don't add date-watching effects without a real complaint.
+
+**[2026-05-26] — Daily rotation Modify keeps the existing image (no regen)**
+When the user clicks Modify on a rotation card, the new text comes from `/api/ai/modify` but the imageUrl stays as-is. The image is now technically stale (it depicts the pre-modification recipe). Trade-off chosen for MVP: regenerating on every Modify would burn ~$0.005/modify and add 10-30s wait, for marginal gain. If the user Saves the modified card, the saved Recipe carries the stale image; they can regenerate from the recipe modal later. Documented over re-implemented.
+
+**[2026-05-26] — DailyRotationFeed loading state is 6 skeleton cards, not a spinner**
+First-of-day load is 30-60s. A centered spinner over an empty page would feel broken. The skeleton cards (animate-pulse on bg-bg-input blocks matching the eventual card layout) make the wait readable as "content is coming" rather than "is something wrong?". Same pattern other long-load Sections should use.
 
 **[2026-05-25] — Post-create image work goes through `useCreateRecipe`'s mutation variables, NOT a per-call `onSuccess`**
 First Stage 8 implementation passed `{ onSuccess: real => generateImageMutation.mutate(real.id) }` as the per-call options arg to `createMutation.mutate(...)`. This silently failed in two places: AddRecipeModal (which calls `onClose()` immediately after `mutate`, unmounting the component) and Home.onApprove (similar pattern with state reset). React Query v5 documents this: **per-call `mutate(vars, { onSuccess })` callbacks are dropped if the calling component unmounts before the mutation resolves**. Hook-level `onSuccess` defined in `useMutation({ onSuccess })` is the one that survives unmount.

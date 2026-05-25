@@ -1,7 +1,7 @@
 // Hand-mirrored from backend Zod schemas in apps/api/src/schemas/.
 // Keep in sync when backend schemas change.
 
-export type RecipeSource = 'manual' | 'ai_generated' | 'ai_modified';
+export type RecipeSource = 'manual' | 'ai_generated' | 'ai_modified' | 'daily_rotation';
 
 export interface Ingredient {
   name: string;
@@ -50,4 +50,23 @@ export interface FullRecipeResponse {
   cooking_time: number;
   servings: number;
   emoji: string;
+}
+
+// A recipe in a daily rotation batch — not yet persisted (no id, userId, source, timestamps).
+// Backend normalizes from TheMealDB + auto-generates an image during batch creation.
+export interface BatchedRecipe {
+  name: string;
+  description: string;
+  ingredients: Ingredient[];
+  steps: string[];
+  tags: string[];
+  cookingTime: number;
+  servings: number;
+  emoji: string;
+  imageUrl: string | null;
+}
+
+export interface RecommendationsResponse {
+  batchDate: string; // UTC "YYYY-MM-DD"
+  recipes: BatchedRecipe[];
 }

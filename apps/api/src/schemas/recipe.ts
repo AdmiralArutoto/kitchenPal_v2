@@ -6,7 +6,7 @@ export const IngredientSchema = z.object({
   unit: z.string(),
 });
 
-export const SourceSchema = z.enum(['manual', 'ai_generated', 'ai_modified']);
+export const SourceSchema = z.enum(['manual', 'ai_generated', 'ai_modified', 'daily_rotation']);
 
 export const RecipeBodySchema = z.object({
   name: z.string().min(1),

@@ -299,6 +299,27 @@ Each sub-plan must include: goal, file-by-file changes with exact paths, command
 
 **Sub-plan:** `C:\Users\Admiral\.claude\plans\review-plans-session-2-merry-alpaca.md`
 
+### [x] Stage 9 — Daily Recipe Rotation
+**Goal:** Replace the mock Featured Recipes section with a real daily-discovery feed: 6 recipes per user per UTC day, generated lazily by combining TheMealDB random meals + OpenAI normalization + auto-generated images. Cards have Save / Modify / Dismiss.
+
+**Deliverables shipped:**
+- Schema: new `DailyBatch` model with `@@unique([userId, batchDate])` (migration `add_daily_batches`); `daily_rotation` added to source enum (Zod + frontend types).
+- `apps/api/src/lib/themealdb.ts` — `fetchRandomMeal()` with 5s timeout.
+- `apps/api/src/lib/openai.ts` — `NORMALIZE_MEAL_SYSTEM_PROMPT` + `buildNormalizePrompt` (handles skip-on-prefs-conflict).
+- `apps/api/src/lib/storage.ts` — `buildDailyBatchKey()` for `daily-batches/{userId}/{batchDate}-{slot}-{uuid}.png`.
+- `apps/api/src/routes/recommendations.ts` + mount in `app.ts`. Parallel 6-slot generation with skip+retry (max 3 per slot) and best-effort image gen (null on failure). P2002 race fallback.
+- `apps/api/src/tests/recommendations.test.ts` — 7 new tests; 65/65 backend total.
+- Frontend: `useRecommendations` hook (date-in-key strategy), `RecommendationCard` (Save/Modify/Dismiss + inline modify panel), `DailyRotationFeed` (6 skeleton cards while loading), Home.tsx swaps Featured Recipes for the feed.
+
+**Deferred:**
+- Persistent dismissal (local-only by user decision).
+- Pre-warm next day's batch (no cron).
+- Cleanup of orphaned daily-batch image blobs after rollover (~600KB/day/user — negligible).
+- Past-rotations history view (rows are kept, data is there if a future feature needs it).
+- Image regeneration on Modify (saves ~$0.005 + 10-30s per Modify; user can regen from recipe modal after save).
+
+**Sub-plan:** `C:\Users\Admiral\.claude\plans\review-plans-session-2-merry-alpaca.md`
+
 ### [ ] Stage 7 — Deployment
 **Goal:** Live on Vercel. All MVP success criteria pass against the deployed app.
 

@@ -9,12 +9,13 @@ datasource db {
 }
 
 model Profile {
-  id          String   @id @db.Uuid
-  name        String?
-  preferences String[]
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt       @map("updated_at")
-  recipes     Recipe[]
+  id            String       @id @db.Uuid
+  name          String?
+  preferences   String[]
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedAt     DateTime     @updatedAt       @map("updated_at")
+  recipes       Recipe[]
+  dailyBatches  DailyBatch[]
 
   @@map("profiles")
 }
@@ -37,4 +38,16 @@ model Recipe {
   profile     Profile  @relation(fields: [userId], references: [id])
 
   @@map("recipes")
+}
+
+model DailyBatch {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid @map("user_id")
+  batchDate String   @map("batch_date")
+  recipes   Json
+  createdAt DateTime @default(now()) @map("created_at")
+  profile   Profile  @relation(fields: [userId], references: [id])
+
+  @@unique([userId, batchDate])
+  @@map("daily_batches")
 }

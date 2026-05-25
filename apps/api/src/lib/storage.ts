@@ -16,6 +16,16 @@ export function buildKey(userId: string, recipeId: string, contentType: string):
   return `${userId}/${recipeId}-${randomUUID()}.${ext}`;
 }
 
+export function buildDailyBatchKey(
+  userId: string,
+  batchDate: string,
+  slot: number,
+  contentType: string,
+): string {
+  const ext = EXT_BY_MIME[contentType] ?? 'png';
+  return `daily-batches/${userId}/${batchDate}-${slot}-${randomUUID()}.${ext}`;
+}
+
 export async function uploadImage(
   buffer: Buffer,
   contentType: string,

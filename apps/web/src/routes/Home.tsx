@@ -6,10 +6,10 @@ import type { Draft, FullRecipeResponse } from '../types/api';
 import Hero from '../components/Hero';
 import GenBar from '../components/GenBar';
 import Card from '../components/Card';
-import Pill from '../components/Pill';
 import AssistPanel from '../components/AssistPanel';
 import DraftsPanel from '../components/DraftsPanel';
 import FinalRecipePanel from '../components/FinalRecipePanel';
+import DailyRotationFeed from '../components/DailyRotationFeed';
 
 const CATEGORIES = [
   { emoji: '🍝', label: 'Italian' },
@@ -18,15 +18,6 @@ const CATEGORIES = [
   { emoji: '🥗', label: 'Vegetarian' },
   { emoji: '⚡', label: 'Quick Meals' },
   { emoji: '🐟', label: 'Seafood' },
-];
-
-const FEATURED_RECIPES = [
-  { title: 'Grilled Fish with Herbs', cookingTime: 25, servings: 2, tags: ['Seafood', 'Healthy'] },
-  { title: 'Gourmet Plated Dinner', cookingTime: 45, servings: 4, tags: ['Gourmet', 'Vegetarian'] },
-  { title: 'Fresh Pasta Carbonara', cookingTime: 30, servings: 3, tags: ['Italian', 'Pasta'] },
-  { title: 'Eggplant Plated Cuisine', cookingTime: 40, servings: 2, tags: ['Vegetarian', 'Mediterranean'] },
-  { title: 'Berry Breakfast Bowl', cookingTime: 10, servings: 1, tags: ['Breakfast', 'Quick'] },
-  { title: 'Pasta Ingredients Prep', cookingTime: 15, servings: 4, tags: ['Italian', 'Quick'] },
 ];
 
 type Phase = 'idle' | 'assist' | 'drafts' | 'final';
@@ -225,37 +216,7 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="bg-bg-page">
-        <div className="mx-auto w-full max-w-[1024px] px-6 pb-12">
-          <div className="flex items-center justify-between">
-            <h2 className="text-2xl font-semibold text-text-default">Featured Recipes</h2>
-            <a href="#" className="text-sm font-medium text-primary hover:text-primary-hover">
-              View All →
-            </a>
-          </div>
-          <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {FEATURED_RECIPES.map((r) => (
-              <Card key={r.title} variant="bordered" padding="none" className="overflow-hidden">
-                <div className="h-32 bg-bg-input" aria-hidden="true" />
-                <div className="p-4">
-                  <h3 className="text-base font-semibold text-text-default">{r.title}</h3>
-                  <div className="mt-2 flex gap-3 text-xs text-text-muted">
-                    <span>⏱ {r.cookingTime} min</span>
-                    <span>🍽 {r.servings} servings</span>
-                  </div>
-                  <div className="mt-3 flex flex-wrap gap-1">
-                    {r.tags.map((tag) => (
-                      <Pill key={tag} variant="recipe-tag">
-                        {tag}
-                      </Pill>
-                    ))}
-                  </div>
-                </div>
-              </Card>
-            ))}
-          </div>
-        </div>
-      </section>
+      <DailyRotationFeed />
     </>
   );
 }
