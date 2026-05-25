@@ -69,3 +69,17 @@ Ingredient "amount" MUST be a number, never a string. "emoji" is a single emoji 
 export const MODIFY_SYSTEM_PROMPT = `You modify an existing recipe based on a user comment, preserving the rest of the recipe.
 Return a JSON object of shape { "name": string, "description": string, "ingredients": [{ "name": string, "amount": number, "unit": string }], "steps": string[], "tags": string[], "cooking_time": number, "servings": number, "emoji": string }.
 Ingredient "amount" MUST be a number. Return ONLY valid JSON.`;
+
+export function buildImagePrompt(recipe: {
+  name: string;
+  description?: string | null;
+  tags?: string[];
+}): string {
+  const parts = [`Professional overhead food photography of "${recipe.name}".`];
+  if (recipe.description) parts.push(recipe.description);
+  if (recipe.tags?.length) parts.push(`Style cues: ${recipe.tags.join(', ')}.`);
+  parts.push(
+    'Appetizing presentation on a rustic wooden surface, natural daylight, shallow depth of field, vibrant but realistic colors. No text, no logos, no people.',
+  );
+  return parts.join(' ');
+}

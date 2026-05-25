@@ -17,6 +17,7 @@ export const RecipeBodySchema = z.object({
   cookingTime: z.number().int().nullable().optional(),
   servings: z.number().int().nullable().optional(),
   emoji: z.string().nullable().optional(),
+  imageUrl: z.string().url().nullable().optional(),
   source: SourceSchema,
 });
 

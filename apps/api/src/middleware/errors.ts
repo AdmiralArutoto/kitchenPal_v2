@@ -11,6 +11,11 @@ export class HttpError extends Error {
 
 export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
   if (err instanceof HttpError) {
+    // Log 5xx upstream/server-side HttpErrors so the cause is visible in dev logs.
+    // 4xx are client errors and stay quiet.
+    if (err.status >= 500) {
+      req.log?.error({ status: err.status, message: err.message }, 'upstream error');
+    }
     res.status(err.status).json({ error: err.message });
     return;
   }

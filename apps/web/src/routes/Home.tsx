@@ -107,15 +107,18 @@ export default function Home() {
   function onApprove() {
     if (!recipe) return;
     createMutation.mutate({
-      name: recipe.name,
-      description: recipe.description,
-      ingredients: recipe.ingredients,
-      steps: recipe.steps,
-      tags: recipe.tags,
-      cookingTime: recipe.cooking_time,
-      servings: recipe.servings,
-      emoji: recipe.emoji,
-      source: 'ai_generated',
+      body: {
+        name: recipe.name,
+        description: recipe.description,
+        ingredients: recipe.ingredients,
+        steps: recipe.steps,
+        tags: recipe.tags,
+        cookingTime: recipe.cooking_time,
+        servings: recipe.servings,
+        emoji: recipe.emoji,
+        source: 'ai_generated',
+      },
+      imageWork: { type: 'generate' },
     });
     setRecipe(null);
     setDrafts([]);
@@ -123,7 +126,7 @@ export default function Home() {
     setPrompt('');
     setPhase('idle');
     setError(null);
-    showToast('Recipe saved to your collection', 'success');
+    showToast('Recipe saved — generating image…', 'success');
   }
 
   function onDeleteFinal() {

@@ -1,7 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { apiFetch, ApiError } from '../lib/api';
 import { toRecipeBody } from '../lib/recipe';
-import { useDeleteRecipe, useUpdateRecipe } from '../hooks/useRecipes';
+import {
+  useDeleteRecipe,
+  useGenerateImage,
+  useRemoveImage,
+  useUpdateRecipe,
+  useUploadImage,
+} from '../hooks/useRecipes';
 import type { FullRecipeResponse, Recipe } from '../types/api';
 import Modal from './Modal';
 import Pill from './Pill';
@@ -29,6 +35,15 @@ export default function RecipeModal({ recipe: initialRecipe, onClose, onTagClick
 
   const updateMutation = useUpdateRecipe();
   const deleteMutation = useDeleteRecipe();
+  const generateImageMutation = useGenerateImage();
+  const uploadImageMutation = useUploadImage();
+  const removeImageMutation = useRemoveImage();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const imageBusy =
+    generateImageMutation.isPending ||
+    uploadImageMutation.isPending ||
+    removeImageMutation.isPending;
 
   // Sync local recipe with cache-driven prop changes while not in an active flow.
   useEffect(() => {
@@ -127,6 +142,24 @@ export default function RecipeModal({ recipe: initialRecipe, onClose, onTagClick
     onClose();
   }
 
+  function handleRegenerateImage() {
+    if (imageBusy) return;
+    generateImageMutation.mutate(recipe.id);
+  }
+
+  function handleFilePicked(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || imageBusy) return;
+    uploadImageMutation.mutate({ recipeId: recipe.id, file });
+  }
+
+  function handleRemoveImage() {
+    if (imageBusy || !recipe.imageUrl) return;
+    if (!window.confirm('Remove this recipe image?')) return;
+    removeImageMutation.mutate(recipe.id);
+  }
+
   if (mode === 'editing') {
     return (
       <Modal open ariaLabel={`Edit ${recipe.name}`} onClose={onClose} size="lg">
@@ -221,13 +254,73 @@ export default function RecipeModal({ recipe: initialRecipe, onClose, onTagClick
 
           {/* Right column — image + ingredients + (optional modify panel) */}
           <div className="flex flex-col gap-4 p-5">
-            {/* Image placeholder — emoji over gradient */}
-            <div
-              className="flex h-48 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-[linear-gradient(139deg,var(--color-accent-soft)_0%,var(--color-card-blob-pink)_50%,var(--color-card-blob-yellow)_100%)]"
-              aria-hidden="true"
-            >
-              <span className="text-7xl">{recipe.emoji ?? '🍽️'}</span>
+            {/* Hero — uploaded/generated image, or emoji-over-gradient fallback */}
+            <div className="relative h-48 shrink-0 overflow-hidden rounded-lg">
+              {recipe.imageUrl ? (
+                <img
+                  src={recipe.imageUrl}
+                  alt={recipe.name}
+                  loading="lazy"
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <div
+                  className="flex h-full w-full items-center justify-center bg-[linear-gradient(139deg,var(--color-accent-soft)_0%,var(--color-card-blob-pink)_50%,var(--color-card-blob-yellow)_100%)]"
+                  aria-hidden="true"
+                >
+                  <span className="text-7xl">{recipe.emoji ?? '🍽️'}</span>
+                </div>
+              )}
+              {generateImageMutation.isPending && (
+                <div className="absolute inset-0 flex items-center justify-center bg-black/40 text-sm font-medium text-white">
+                  Generating image…
+                </div>
+              )}
             </div>
+
+            {/* Image action row — visible only in idle mode */}
+            {mode === 'idle' && (
+              <div className="flex flex-wrap gap-2">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  onChange={handleFilePicked}
+                  className="hidden"
+                />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleRegenerateImage}
+                  disabled={imageBusy}
+                >
+                  <SparkleIcon />
+                  <span className="ml-2">
+                    {recipe.imageUrl ? 'Regenerate' : 'Generate with AI'}
+                  </span>
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={imageBusy}
+                >
+                  {uploadImageMutation.isPending ? 'Uploading…' : 'Upload'}
+                </Button>
+                {recipe.imageUrl && (
+                  <button
+                    type="button"
+                    onClick={handleRemoveImage}
+                    disabled={imageBusy}
+                    className="inline-flex h-8 items-center rounded-lg border border-border-subtle bg-bg-card px-3 text-sm font-medium text-danger hover:bg-bg-toggle disabled:opacity-50"
+                  >
+                    Remove
+                  </button>
+                )}
+              </div>
+            )}
 
             {/* Ingredients table */}
             {recipe.ingredients.length > 0 && (

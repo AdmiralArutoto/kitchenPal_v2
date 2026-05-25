@@ -26,6 +26,7 @@ export interface Recipe {
   cookingTime: number | null;
   servings: number | null;
   emoji: string | null;
+  imageUrl: string | null;
   source: RecipeSource;
   createdAt: string;
   updatedAt: string;

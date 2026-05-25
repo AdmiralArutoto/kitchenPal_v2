@@ -15,12 +15,21 @@ export default function RecipeCard({ recipe, onClick }: Props) {
       onClick={onClick}
       className="flex h-full flex-col overflow-hidden rounded-2xl border border-border-subtle bg-bg-card text-left transition-shadow hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
     >
-      <div
-        className="flex h-48 shrink-0 items-center justify-center bg-[linear-gradient(139deg,var(--color-accent-soft)_0%,var(--color-card-blob-pink)_50%,var(--color-card-blob-yellow)_100%)]"
-        aria-hidden="true"
-      >
-        <span className="text-7xl">{recipe.emoji ?? '🍽️'}</span>
-      </div>
+      {recipe.imageUrl ? (
+        <img
+          src={recipe.imageUrl}
+          alt=""
+          loading="lazy"
+          className="h-48 w-full shrink-0 object-cover"
+        />
+      ) : (
+        <div
+          className="flex h-48 shrink-0 items-center justify-center bg-[linear-gradient(139deg,var(--color-accent-soft)_0%,var(--color-card-blob-pink)_50%,var(--color-card-blob-yellow)_100%)]"
+          aria-hidden="true"
+        >
+          <span className="text-7xl">{recipe.emoji ?? '🍽️'}</span>
+        </div>
+      )}
       <div className="flex flex-1 flex-col gap-3 p-4">
         <div className="flex flex-col gap-1">
           <h3

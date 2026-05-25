@@ -279,6 +279,26 @@ Each sub-plan must include: goal, file-by-file changes with exact paths, command
 
 **Sub-plan:** `.claude/plans/stage-6-frontend-catalog.md`
 
+### [x] Stage 8 — Recipe Images (DALL-E 3 + Supabase Storage)
+**Goal:** AI-generated recipes auto-get a DALL-E 3 image after Approve. Manual recipes get an upload-or-generate picker. Storage in Supabase Storage `recipe-images` (public, UUID keys). Provider abstraction ready for Flux 1.1 Pro swap.
+
+**Deliverables shipped:**
+- Schema: `imageUrl String? @map("image_url")` on Recipe (migration `add_recipe_image_url`).
+- `apps/api/src/lib/storage.ts` — Supabase Storage upload/delete + key helpers.
+- `apps/api/src/lib/image-provider.ts` — `ImageProvider` interface, DALL-E 3 impl, Flux stub.
+- `apps/api/src/lib/openai.ts` — `buildImagePrompt` helper.
+- Three new routes under `/api/recipes/:id/image/{generate,upload}` + `DELETE /api/recipes/:id/image`. Existing recipe DELETE cleans up the storage object too.
+- `multer` for multipart parsing (5MB cap, MIME allowlist).
+- Frontend: `useGenerateImage` / `useUploadImage` / `useRemoveImage` hooks. RecipeCard + RecipeModal render `imageUrl` with emoji-gradient fallback. AddRecipeModal grows an image picker (Upload / Generate with AI / Skip). RecipeModal view mode has Regenerate/Upload/Remove action row. Home.onApprove fires `generateImageMutation` on success.
+- `apiFetch` skips `Content-Type` for `FormData` bodies.
+
+**Deferred:**
+- Flux 1.1 Pro impl (interface ready; env var `IMAGE_PROVIDER=flux` throws 501 until built).
+- Vercel deploy timeout workaround (Pro tier or worker queue) — out of scope while Stage 7 is parked.
+- "Generating image…" status indicator on cards.
+
+**Sub-plan:** `C:\Users\Admiral\.claude\plans\review-plans-session-2-merry-alpaca.md`
+
 ### [ ] Stage 7 — Deployment
 **Goal:** Live on Vercel. All MVP success criteria pass against the deployed app.
 

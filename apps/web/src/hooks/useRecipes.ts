@@ -16,15 +16,30 @@ export function useRecipes() {
   });
 }
 
+// Optional follow-up image work the caller wants run after a recipe is created.
+// Lives on the mutation variables (NOT a per-call onSuccess) so it survives the
+// component unmounting — caller modals (e.g., AddRecipeModal) typically close
+// immediately after firing the mutation, which would drop a per-call callback.
+export type CreateRecipeVars = {
+  body: RecipeBody;
+  imageWork?: { type: 'generate' } | { type: 'upload'; file: File };
+};
+
+function patchRecipeInCache(qc: ReturnType<typeof useQueryClient>, fresh: Recipe) {
+  qc.setQueryData<Recipe[]>(RECIPES_KEY, (old) =>
+    (old ?? []).map((r) => (r.id === fresh.id ? fresh : r)),
+  );
+}
+
 export function useCreateRecipe() {
   const qc = useQueryClient();
   const { user } = useAuth();
   const { showToast } = useToast();
 
-  return useMutation<Recipe, Error, RecipeBody, { prev: Recipe[] | undefined; tempId: string }>({
-    mutationFn: (body) =>
+  return useMutation<Recipe, Error, CreateRecipeVars, { prev: Recipe[] | undefined; tempId: string }>({
+    mutationFn: ({ body }) =>
       apiFetch<Recipe>('/api/recipes', { method: 'POST', body: JSON.stringify(body) }),
-    onMutate: async (body) => {
+    onMutate: async ({ body }) => {
       await qc.cancelQueries({ queryKey: RECIPES_KEY });
       const prev = qc.getQueryData<Recipe[]>(RECIPES_KEY);
       const tempId = `temp-${crypto.randomUUID()}`;
@@ -33,20 +48,48 @@ export function useCreateRecipe() {
         ...body,
         id: tempId,
         userId: user?.id ?? '',
+        imageUrl: null,
         createdAt: nowIso,
         updatedAt: nowIso,
       };
       qc.setQueryData<Recipe[]>(RECIPES_KEY, (old) => [optimistic, ...(old ?? [])]);
       return { prev, tempId };
     },
-    onError: (_err, _body, ctx) => {
+    onError: (_err, _vars, ctx) => {
       if (ctx?.prev !== undefined) qc.setQueryData(RECIPES_KEY, ctx.prev);
       showToast('Failed to save recipe. Please try again.', 'error');
     },
-    onSuccess: (real, _body, ctx) => {
+    onSuccess: (real, vars, ctx) => {
       qc.setQueryData<Recipe[]>(RECIPES_KEY, (old) =>
         (old ?? []).map((r) => (r.id === ctx.tempId ? real : r)),
       );
+
+      // Chain follow-up image work via direct apiFetch (not via the image hooks)
+      // so it runs even if the calling component has already unmounted.
+      const work = vars.imageWork;
+      if (!work) return;
+
+      const apply = work.type === 'upload'
+        ? () => {
+            const fd = new FormData();
+            fd.append('file', work.file);
+            return apiFetch<Recipe>(`/api/recipes/${real.id}/image/upload`, {
+              method: 'POST',
+              body: fd,
+            });
+          }
+        : () => apiFetch<Recipe>(`/api/recipes/${real.id}/image/generate`, { method: 'POST' });
+
+      apply()
+        .then((fresh) => patchRecipeInCache(qc, fresh))
+        .catch(() =>
+          showToast(
+            work.type === 'upload'
+              ? 'Image upload failed. You can retry from the recipe.'
+              : 'Image generation failed. You can retry from the recipe.',
+            'error',
+          ),
+        );
     },
   });
 }
@@ -101,5 +144,47 @@ export function useDeleteRecipe() {
       if (ctx?.prev !== undefined) qc.setQueryData(RECIPES_KEY, ctx.prev);
       showToast('Failed to delete recipe. Please try again.', 'error');
     },
+  });
+}
+
+export function useGenerateImage() {
+  const qc = useQueryClient();
+  const { showToast } = useToast();
+
+  return useMutation<Recipe, Error, string>({
+    mutationFn: (recipeId) =>
+      apiFetch<Recipe>(`/api/recipes/${recipeId}/image/generate`, { method: 'POST' }),
+    onSuccess: (fresh) => patchRecipeInCache(qc, fresh),
+    onError: () => showToast('Image generation failed. You can retry from the recipe.', 'error'),
+  });
+}
+
+export function useUploadImage() {
+  const qc = useQueryClient();
+  const { showToast } = useToast();
+
+  return useMutation<Recipe, Error, { recipeId: string; file: File }>({
+    mutationFn: ({ recipeId, file }) => {
+      const fd = new FormData();
+      fd.append('file', file);
+      return apiFetch<Recipe>(`/api/recipes/${recipeId}/image/upload`, {
+        method: 'POST',
+        body: fd,
+      });
+    },
+    onSuccess: (fresh) => patchRecipeInCache(qc, fresh),
+    onError: () => showToast('Image upload failed. Please try again.', 'error'),
+  });
+}
+
+export function useRemoveImage() {
+  const qc = useQueryClient();
+  const { showToast } = useToast();
+
+  return useMutation<Recipe, Error, string>({
+    mutationFn: (recipeId) =>
+      apiFetch<Recipe>(`/api/recipes/${recipeId}/image`, { method: 'DELETE' }),
+    onSuccess: (fresh) => patchRecipeInCache(qc, fresh),
+    onError: () => showToast('Failed to remove image. Please try again.', 'error'),
   });
 }

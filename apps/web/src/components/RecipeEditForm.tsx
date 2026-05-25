@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useState, type FormEvent, type ReactNode } from 'react';
 import type { Ingredient } from '../types/api';
 import Button from './Button';
 import Input from './Input';
@@ -26,6 +26,9 @@ type Props = {
   title?: string;
   subtitle?: string;
   externalError?: string | null;
+  // Override the right-column hero (default = emoji over gradient). Used by AddRecipeModal
+  // for the new-recipe image picker; existing-recipe edit flows leave this unset.
+  imageSlot?: ReactNode;
 };
 
 type IngredientRow = { amountText: string; name: string };
@@ -42,6 +45,7 @@ export default function RecipeEditForm({
   title,
   subtitle,
   externalError,
+  imageSlot,
 }: Props) {
   const [name, setName] = useState(initialValues.name);
   const [description, setDescription] = useState(initialValues.description ?? '');
@@ -312,13 +316,14 @@ export default function RecipeEditForm({
 
         {/* Right column — image placeholder + ingredients table editor */}
         <div className="flex flex-col gap-4 p-5">
-          {/* Emoji + gradient hero (mirrors RecipeModal view) */}
-          <div
-            className="flex h-48 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-[linear-gradient(139deg,var(--color-accent-soft)_0%,var(--color-card-blob-pink)_50%,var(--color-card-blob-yellow)_100%)]"
-            aria-hidden="true"
-          >
-            <span className="text-7xl">{initialValues.emoji ?? '🍽️'}</span>
-          </div>
+          {imageSlot ?? (
+            <div
+              className="flex h-48 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-[linear-gradient(139deg,var(--color-accent-soft)_0%,var(--color-card-blob-pink)_50%,var(--color-card-blob-yellow)_100%)]"
+              aria-hidden="true"
+            >
+              <span className="text-7xl">{initialValues.emoji ?? '🍽️'}</span>
+            </div>
+          )}
 
           {/* Ingredients editor */}
           <div className="flex flex-col gap-2">

@@ -1,4 +1,5 @@
-import { Router } from 'express';
+import { Router, type Request } from 'express';
+import multer from 'multer';
 import type { Prisma } from '@prisma/client';
 import { prisma } from '../lib/prisma.js';
 import { authMiddleware } from '../middleware/auth.js';
@@ -8,6 +9,9 @@ import {
   RecipeUpdateSchema,
   RecipeListQuerySchema,
 } from '../schemas/recipe.js';
+import { buildKey, deleteImage, keyFromUrl, uploadImage } from '../lib/storage.js';
+import { imageProvider } from '../lib/image-provider.js';
+import { buildImagePrompt } from '../lib/openai.js';
 
 export const recipesRouter = Router();
 recipesRouter.use(authMiddleware);
@@ -18,6 +22,27 @@ const SORT_MAP: Record<'newest' | 'oldest' | 'name_asc' | 'name_desc', Prisma.Re
   name_asc: { name: 'asc' },
   name_desc: { name: 'desc' },
 };
+
+const ALLOWED_IMAGE_MIME = new Set(['image/png', 'image/jpeg', 'image/webp']);
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (ALLOWED_IMAGE_MIME.has(file.mimetype)) cb(null, true);
+    else cb(new HttpError(400, 'Image must be png, jpeg, or webp'));
+  },
+});
+
+// Maps multer's own LIMIT_* errors into 400 HttpError so the user sees a clear message.
+function withMulterErrors(mw: import('express').RequestHandler): import('express').RequestHandler {
+  return (req, res, next) => {
+    mw(req, res, (err: unknown) => {
+      if (err instanceof multer.MulterError) next(new HttpError(400, err.message));
+      else next(err);
+    });
+  };
+}
 
 recipesRouter.get('/', async (req, res) => {
   const q = RecipeListQuerySchema.safeParse(req.query);
@@ -82,9 +107,95 @@ recipesRouter.put('/:id', async (req, res) => {
 recipesRouter.delete('/:id', async (req, res) => {
   const existing = await prisma.recipe.findFirst({
     where: { id: req.params.id, userId: req.userId! },
-    select: { id: true },
+    select: { id: true, imageUrl: true },
   });
   if (!existing) throw new HttpError(404, 'Recipe not found');
   await prisma.recipe.delete({ where: { id: req.params.id } });
+
+  if (existing.imageUrl) {
+    const key = keyFromUrl(existing.imageUrl);
+    if (key) {
+      try {
+        await deleteImage(key);
+      } catch (err) {
+        req.log.warn({ err, key }, 'failed to delete image after recipe delete');
+      }
+    }
+  }
   res.status(204).end();
+});
+
+// ──────────────── image sub-routes ────────────────
+
+// Find the recipe, ensure ownership; return id + current imageUrl for cleanup.
+async function ownedRecipe(req: Request) {
+  const id = (req.params as Record<string, string>).id;
+  const existing = await prisma.recipe.findFirst({
+    where: { id, userId: req.userId! },
+    select: { id: true, name: true, description: true, tags: true, imageUrl: true },
+  });
+  if (!existing) throw new HttpError(404, 'Recipe not found');
+  return existing;
+}
+
+async function deleteOldImage(req: Request, oldUrl: string | null) {
+  if (!oldUrl) return;
+  const key = keyFromUrl(oldUrl);
+  if (!key) return;
+  try {
+    await deleteImage(key);
+  } catch (err) {
+    req.log.warn({ err, key }, 'failed to delete previous image');
+  }
+}
+
+recipesRouter.post('/:id/image/generate', async (req, res) => {
+  const existing = await ownedRecipe(req);
+  const prompt = buildImagePrompt({
+    name: existing.name,
+    description: existing.description,
+    tags: existing.tags,
+  });
+
+  const { bytes, contentType } = await imageProvider.generate(prompt);
+  const key = buildKey(req.userId!, existing.id, contentType);
+  const url = await uploadImage(bytes, contentType, key);
+
+  const updated = await prisma.recipe.update({
+    where: { id: existing.id },
+    data: { imageUrl: url },
+  });
+
+  // Best-effort delete of the prior image — never block the response on this.
+  await deleteOldImage(req, existing.imageUrl);
+
+  res.json(updated);
+});
+
+recipesRouter.post('/:id/image/upload', withMulterErrors(upload.single('file')), async (req, res) => {
+  if (!req.file) throw new HttpError(400, 'Missing file');
+  const existing = await ownedRecipe(req);
+
+  const key = buildKey(req.userId!, existing.id, req.file.mimetype);
+  const url = await uploadImage(req.file.buffer, req.file.mimetype, key);
+
+  const updated = await prisma.recipe.update({
+    where: { id: existing.id },
+    data: { imageUrl: url },
+  });
+
+  await deleteOldImage(req, existing.imageUrl);
+
+  res.json(updated);
+});
+
+recipesRouter.delete('/:id/image', async (req, res) => {
+  const existing = await ownedRecipe(req);
+  await deleteOldImage(req, existing.imageUrl);
+
+  const updated = await prisma.recipe.update({
+    where: { id: existing.id },
+    data: { imageUrl: null },
+  });
+  res.json(updated);
 });

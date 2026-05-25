@@ -11,9 +11,9 @@ This file is for what doesn't belong in the spec — decisions made during imple
 ## Current State
 
 ```
-Status: Recipe caching with optimistic updates shipped. Recipe CRUD (add/edit/delete/AI-modify-approve) is now instant — UI mutates first, backend sync runs in background, rollback + toast on failure. Built on @tanstack/react-query with one `['recipes']` query (fetched once per session) and three mutation hooks (create/update/delete) that share a cache invalidation contract. Filtering/sorting moved client-side in Catalog. Shared ToastProvider promoted from Home. Build clean; 36/36 backend tests green.
-Last session: Session 22 — recipe caching + optimistic mutations.
-Next action: Stage 7 (Vercel deploy) parked per user — focus stays on dev. No outstanding in-app TODOs; awaiting next user-proposed feature/polish.
+Status: Recipe images shipped (Stage 8). Supabase Storage `recipe-images` bucket (public, UUID keys), OpenAI `gpt-image-1-mini` @ medium quality, multipart user uploads. Three image mutation hooks (generate/upload/remove) follow the existing cache-patch pattern. AI recipes auto-generate an image in the background after Approve; manual recipes get a picker in AddRecipeModal (Upload | Generate with AI | Skip); RecipeModal view mode has Regenerate/Upload/Remove. RecipeCard + RecipeModal hero fall back to emoji-gradient when imageUrl is null. ImageProvider interface ready for Flux 1.1 Pro swap via env var. Build clean; 59/59 backend tests green.
+Last session: Session 23 — Stage 8 recipe images (DALL-E 3 + storage + uploads).
+Next action: Stage 7 (Vercel deploy) still parked. No outstanding in-app TODOs; awaiting next user-proposed feature/polish.
 Open questions: None active.
 ```
 
@@ -245,11 +245,55 @@ Was a private helper inside RecipeModal. Now a shared utility that both RecipeMo
 **[2026-05-24] — Stage 7 (deployment) is parked, not cancelled**
 User decision: keep focus on local dev iteration; resume deployment work later. SPEC §10 success criteria can still be ticked locally against the dev environment. The master plan's `[ ] Stage 7` stays unchecked. When ready, work through STARTUP.md items 5 (Vercel) + 6 (production SMTP) and follow `.claude/plans/SESSION_3_IMPLEMENTATION.md` Stage 7 deliverables.
 
+**[2026-05-25] — Stage 8 image storage: public bucket + UUID keys**
+Bucket `recipe-images` is **public** in Supabase Storage. Object keys are `{userId}/{recipeId}-{uuid}.{ext}` — unguessable, so the practical exposure of a "public" bucket is near zero for a private vault. Public buys permanent browser-cacheable CDN URLs with no signed-URL refresh code. Don't switch to a private bucket without first adding signed-read URL refresh logic in both `lib/storage.ts` and the frontend image consumers. Key extension is derived from MIME (`image/png|jpeg|webp` → `png|jpg|webp`; falls back to `png`).
+
+**[2026-05-25] — Image generation timing: background after Approve**
+AI recipes don't get an image during the generation flow — the FinalRecipePanel still shows emoji. `Home.onApprove` fires `useCreateRecipe.mutate(..., { onSuccess: real => generateImageMutation.mutate(real.id) })`. The recipe lands in Catalog with emoji fallback; ~15-30s later DALL-E finishes and the cache patches in the real image. Chosen over inline-before-approve to save DALL-E cost on the regen-heavy path: each regenerate of a recipe text otherwise burns another image. On-demand image regeneration is exposed via the RecipeModal view-mode action row (Regenerate/Upload/Remove).
+
+**[2026-05-25] — `ImageProvider` interface lets us swap providers via env var**
+`apps/api/src/lib/image-provider.ts` exports a one-method interface and selects the implementation via `IMAGE_PROVIDER` env var (`openai` default, `flux` is a stub that throws 501). The OpenAI provider uses `gpt-image-1-mini` at `medium` quality, `1024x1024`. When swapping to Flux 1.1 Pro (via Replicate or fal.ai), implement `fluxProvider.generate` and flip the env var. No route changes needed. Per-call timeout is overridden to 60s (image gen ≠ chat — the default 9s ceiling is too tight).
+
+**[2026-05-25] — Use `gpt-image-1-mini` not DALL-E 3 (deprecated)**
+First Stage 8 implementation used `dall-e-3` model with `response_format: 'url'` and `quality: 'standard'`. First test run hit 502s; OpenAI has deprecated DALL-E 3. Swapped to `gpt-image-1-mini` at `medium` quality. Important behavior differences from DALL-E:
+- gpt-image-1 family does **NOT** support `response_format` — always returns base64 in `data[0].b64_json`. Don't pass `response_format` or the API errors.
+- Quality scale is `low | medium | high | auto` (NOT `standard | hd`).
+- Decoding: `Buffer.from(b64, 'base64')` directly; no URL fetch step.
+Cost: ~$0.005 per medium 1024×1024 (vs DALL-E 3 standard $0.040), per OpenAI pricing late-2025. About 8× cheaper for our use case.
+
+**[2026-05-25] — Image generation timeout is the OpenAI gpt-image-1 ceiling**
+Per-call timeout in `image-provider.ts` is 60s. gpt-image-1-mini medium quality typically completes in 10-25s. The OpenAI SDK retries failed requests by default (2 retries with backoff), so a hard rejection may stretch to ~10s wall time before our 502 surfaces. Don't increase the timeout without also disabling SDK retries or you'll wait several minutes on a stuck request.
+
+**[2026-05-25] — `req.params.id` typing pattern for shared route helpers**
+Express's default `Request.params` is `ParamsDictionary` (Record<string,string>), not `{ id: string }`. Free-function helpers that take `req: Request` cannot use `Request<{ id: string }>` because Express passes the broader handler type at call sites — that produces a TS2345 mismatch. Pattern in `recipes.ts` `ownedRecipe`: take `req: Request`, then `const id = (req.params as Record<string, string>).id`. Don't try to narrow with a generic.
+
+**[2026-05-25] — `apiFetch` skips `Content-Type` for FormData bodies**
+Browser must set the multipart boundary itself. `apps/web/src/lib/api.ts` checks `init.body instanceof FormData` and omits the JSON Content-Type header in that case. Used by `useUploadImage` for recipe image uploads. Don't manually set Content-Type on FormData calls — the boundary will be missing and the backend will fail to parse.
+
+**[2026-05-25] — Vercel deploy needs Pro tier for the image-generate route**
+DALL-E 3 latency (10-30s) exceeds Vercel hobby's 10s function timeout. Local dev (`tsx watch`) has no timeout so this is invisible today. When Stage 7 unparks: either upgrade to Vercel Pro (60s default, 300s with config) for that route, or move image generation to a background worker (Inngest, QStash). Documented as a deploy-time concern in STARTUP.md item 9.
+
+**[2026-05-25] — `RecipeEditForm` has an optional `imageSlot` override**
+The form's right-column hero defaults to the emoji-gradient block (used by RecipeModal edit mode + FinalRecipePanel edit). AddRecipeModal passes an `imageSlot` ReactNode that replaces the hero with its image-picker UI (Upload/Generate with AI/Skip + preview). This avoids forking the form for "new with image picker" vs "edit without one". RecipeModal edit mode does NOT pass imageSlot because image controls live in view mode — image management is decoupled from text-field editing.
+
+**[2026-05-25] — Post-create image work goes through `useCreateRecipe`'s mutation variables, NOT a per-call `onSuccess`**
+First Stage 8 implementation passed `{ onSuccess: real => generateImageMutation.mutate(real.id) }` as the per-call options arg to `createMutation.mutate(...)`. This silently failed in two places: AddRecipeModal (which calls `onClose()` immediately after `mutate`, unmounting the component) and Home.onApprove (similar pattern with state reset). React Query v5 documents this: **per-call `mutate(vars, { onSuccess })` callbacks are dropped if the calling component unmounts before the mutation resolves**. Hook-level `onSuccess` defined in `useMutation({ onSuccess })` is the one that survives unmount.
+
+Fix: `useCreateRecipe` now takes `CreateRecipeVars = { body: RecipeBody; imageWork?: ... }`. The hook's onSuccess inspects `vars.imageWork` and fires the follow-up via direct `apiFetch` (bypassing the image hooks entirely — those hooks' tear-down would otherwise cancel the work). Cache patching uses the shared `patchRecipeInCache` helper. Call sites pass `imageWork: { type: 'generate' }` (Home approve) or `{ type: 'upload', file }` (AddRecipeModal). RecipeModal's direct calls to `useGenerateImage`/`useUploadImage`/`useRemoveImage` are unchanged — they work because the modal stays mounted during those operations.
+
+**Rule:** Don't chain mutations via per-call `onSuccess` when the caller closes/unmounts immediately. Either await `mutateAsync` before closing, or push the chain into the hook's static `onSuccess`.
+
+**[2026-05-25] — Image controls in RecipeModal are independent of edit mode**
+In RecipeModal view mode, below the image: Regenerate/Upload/Remove buttons fire the relevant mutation immediately against `recipe.id`. They do NOT live inside the edit form because images are managed independently of text fields — the modal shows the cache, the cache patches when image mutations resolve, the modal re-renders. This keeps both surfaces simple and avoids edit-mode race conditions where uploaded-but-unsaved would need its own state.
+
 ---
 
 ## Error Patterns
 
 > Errors, causes, fixes. Added when encountered.
+
+**Prisma `EPERM ... rename ... query_engine-windows.dll.node` on Windows**
+The VSCode TypeScript Server (a `node.exe` child) loads the Prisma client DLL for IntelliSense and holds an exclusive Windows file lock. `prisma generate` writes to a `.tmp` then renames over the existing DLL — the rename fails. Reloading the VSCode window does NOT release the lock because the new TS Server respawns and re-opens the DLL immediately. Fix: find the holding PID with `Get-Process node | Where-Object Modules.FileName -like '*query_engine-windows*'` and `taskkill //PID <pid> //F` (Git Bash needs double slashes); the TS server respawns on demand and IntelliSense is unaffected. The migration itself always applies regardless — only the generated client code is blocked.
 
 ---
 

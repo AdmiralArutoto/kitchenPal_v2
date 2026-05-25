@@ -87,14 +87,22 @@ After items 1 and 3 are filled in:
 - [ ] npm 9 or higher — `npm -v`
 - [ ] Claude Code installed (VS Code extension or CLI)
 
-## Post-MVP: Supabase Storage
+## 9. Supabase Storage bucket   `[Stage 8]`
 
-Not part of the MVP. When the time comes:
+Required for: recipe image uploads (manual) and DALL-E-generated images (AI recipes).
 
-- Create a Storage bucket (likely `recipe-images`) in the Supabase dashboard.
-- Add `SUPABASE_STORAGE_BUCKET=recipe-images` to env vars.
-- Add an `imageUrl String?` column to `Recipe` via a Prisma migration.
-- Add backend routes for signed upload URLs and object deletion (deletion fires on recipe delete).
-- Frontend Add/Edit modal grows an image picker; cards and modal swap emoji-on-bg for the uploaded image when present.
-
-Recorded as a decision in CLAUDE.md so the migration path stays consistent when it lands.
+- [ ] Open Supabase dashboard → **Storage** in the left sidebar → **New bucket**.
+- [ ] Configure:
+  - Name: `recipe-images`
+  - **Public bucket: ON** (recipe images are served via direct CDN URLs; isolation is by unguessable object keys, not bucket ACLs).
+  - Restrict file size: **5 MB**.
+  - Allowed MIME types: `image/png, image/jpeg, image/webp`.
+- [ ] No CORS config needed — public-bucket CDN URLs load as plain `<img src>` from any origin.
+- [ ] Add to your local `.env` (and `.env.example` if managing those by hand):
+  ```
+  SUPABASE_STORAGE_BUCKET=recipe-images
+  IMAGE_PROVIDER=openai
+  ```
+  `IMAGE_PROVIDER` selects the image generation backend. `openai` (default) uses `gpt-image-1-mini` at `medium` quality; `flux` is a stub for later.
+- [ ] Cost note: `gpt-image-1-mini` at medium quality is approximately **$0.005 per 1024×1024 image** (an order of magnitude cheaper than the deprecated DALL-E 3 it replaced). Each Approve on an AI recipe and each "Generate with AI" on a manual recipe triggers one call. Background regenerates cost another.
+- [ ] **Deploy note:** image generation latency (10-30s typical) exceeds Vercel hobby's 10s function timeout. Stage 7 (deploy) is currently parked; when it resumes, the image-generate route needs Vercel Pro (60s) or migration to a background worker. Local dev (`tsx watch`) has no timeout, so this is not a blocker today.
