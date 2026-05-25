@@ -1,6 +1,5 @@
-import { useEffect, useState } from 'react';
-import { apiFetch, ApiError } from '../lib/api';
-import type { ProfileResponse } from '../types/api';
+import { useState } from 'react';
+import { useProfile, useUpdateProfile } from '../hooks/useProfile';
 import Card from '../components/Card';
 import Button from '../components/Button';
 import Input from '../components/Input';
@@ -16,66 +15,22 @@ const FEATURES = [
 ];
 
 export default function About() {
-  const [profile, setProfile] = useState<ProfileResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { data: profile, isLoading, error } = useProfile();
+  const updateMutation = useUpdateProfile();
 
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
-  const [savingName, setSavingName] = useState(false);
-
   const [newPref, setNewPref] = useState('');
-  const [savingPrefs, setSavingPrefs] = useState(false);
 
-  useEffect(() => {
-    apiFetch<ProfileResponse>('/api/profile')
-      .then((p) => {
-        setProfile(p);
-        setNameDraft(p.name ?? '');
-        setLoading(false);
-      })
-      .catch((err) => {
-        setError(err instanceof ApiError ? err.message : 'Failed to load profile');
-        setLoading(false);
-      });
-  }, []);
-
-  async function saveName() {
-    if (!profile) return;
-    setSavingName(true);
-    setError(null);
-    try {
-      const updated = await apiFetch<ProfileResponse>('/api/profile', {
-        method: 'PUT',
-        body: JSON.stringify({ name: nameDraft.trim() || null }),
-      });
-      setProfile(updated);
-      setEditingName(false);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to save name');
-    } finally {
-      setSavingName(false);
-    }
+  function startEditName() {
+    setNameDraft(profile?.name ?? '');
+    setEditingName(true);
   }
 
-  async function updatePrefs(next: string[]) {
+  function saveName() {
     if (!profile) return;
-    const prev = profile.preferences;
-    setProfile({ ...profile, preferences: next });
-    setSavingPrefs(true);
-    setError(null);
-    try {
-      const updated = await apiFetch<ProfileResponse>('/api/profile', {
-        method: 'PUT',
-        body: JSON.stringify({ preferences: next }),
-      });
-      setProfile(updated);
-    } catch (err) {
-      setProfile({ ...profile, preferences: prev });
-      setError(err instanceof ApiError ? err.message : 'Failed to update preferences');
-    } finally {
-      setSavingPrefs(false);
-    }
+    updateMutation.mutate({ name: nameDraft.trim() || null });
+    setEditingName(false);
   }
 
   function addPref() {
@@ -86,15 +41,15 @@ export default function About() {
       return;
     }
     setNewPref('');
-    void updatePrefs([...profile.preferences, trimmed]);
+    updateMutation.mutate({ preferences: [...profile.preferences, trimmed] });
   }
 
   function removePref(pref: string) {
     if (!profile) return;
-    void updatePrefs(profile.preferences.filter((p) => p !== pref));
+    updateMutation.mutate({ preferences: profile.preferences.filter((p) => p !== pref) });
   }
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="mx-auto w-full max-w-[896px] px-6 pt-12 pb-20">
         <p className="text-sm text-text-muted">Loading…</p>
@@ -105,19 +60,13 @@ export default function About() {
   if (!profile) {
     return (
       <div className="mx-auto w-full max-w-[896px] px-6 pt-12 pb-20">
-        <p className="text-sm text-red-600">{error ?? 'Profile not available'}</p>
+        <p className="text-sm text-red-600">{error?.message ?? 'Profile not available'}</p>
       </div>
     );
   }
 
   return (
     <div className="mx-auto flex w-full max-w-[896px] flex-col gap-8 px-6 pt-12 pb-20">
-      {error && (
-        <Card variant="bordered" padding="sm" className="border-red-300 bg-red-50">
-          <p className="text-sm text-red-600">{error}</p>
-        </Card>
-      )}
-
       {/* Account Info card */}
       <Card variant="bordered" padding="lg">
         <div className="flex items-center gap-3 border-b border-black/10 pb-4">
@@ -157,13 +106,8 @@ export default function About() {
                 />
                 {editingName ? (
                   <>
-                    <Button
-                      type="button"
-                      size="sm"
-                      onClick={saveName}
-                      disabled={savingName}
-                    >
-                      {savingName ? 'Saving…' : 'Save'}
+                    <Button type="button" size="sm" onClick={saveName}>
+                      Save
                     </Button>
                     <Button
                       type="button"
@@ -173,7 +117,6 @@ export default function About() {
                         setEditingName(false);
                         setNameDraft(profile.name ?? '');
                       }}
-                      disabled={savingName}
                     >
                       Cancel
                     </Button>
@@ -183,7 +126,7 @@ export default function About() {
                     type="button"
                     variant="secondary"
                     size="sm"
-                    onClick={() => setEditingName(true)}
+                    onClick={startEditName}
                   >
                     Edit
                   </Button>
@@ -230,14 +173,13 @@ export default function About() {
                     addPref();
                   }
                 }}
-                disabled={savingPrefs}
               />
               <Button
                 type="button"
                 variant="secondary"
                 size="sm"
                 onClick={addPref}
-                disabled={savingPrefs || !newPref.trim()}
+                disabled={!newPref.trim()}
               >
                 <svg
                   width="16"
