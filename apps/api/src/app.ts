@@ -4,6 +4,7 @@ import { profileRouter } from './routes/profile.js';
 import { recipesRouter } from './routes/recipes.js';
 import { aiRouter } from './routes/ai.js';
 import { recommendationsRouter } from './routes/recommendations.js';
+import { importRouter } from './routes/import.js';
 import { errorHandler, notFoundHandler } from './middleware/errors.js';
 
 export function createApp() {
@@ -21,6 +22,7 @@ export function createApp() {
   app.use('/api/recipes', recipesRouter);
   app.use('/api/ai', aiRouter);
   app.use('/api/recommendations', recommendationsRouter);
+  app.use('/api/import', importRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

@@ -1,7 +1,12 @@
 // Hand-mirrored from backend Zod schemas in apps/api/src/schemas/.
 // Keep in sync when backend schemas change.
 
-export type RecipeSource = 'manual' | 'ai_generated' | 'ai_modified' | 'daily_rotation';
+export type RecipeSource =
+  | 'manual'
+  | 'ai_generated'
+  | 'ai_modified'
+  | 'daily_rotation'
+  | 'imported';
 
 export interface Ingredient {
   name: string;
@@ -28,6 +33,9 @@ export interface Recipe {
   emoji: string | null;
   imageUrl: string | null;
   source: RecipeSource;
+  sourceUrl: string | null;
+  sourcePlatform: string | null;
+  sourceCreator: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -69,4 +77,25 @@ export interface BatchedRecipe {
 export interface RecommendationsResponse {
   batchDate: string; // UTC "YYYY-MM-DD"
   recipes: BatchedRecipe[];
+}
+
+// Extracted recipe draft from the import routes (snake_case cooking_time, like FullRecipeResponse).
+// Not yet persisted — the user reviews/edits, then saves via POST /api/recipes.
+export interface ImportDraft {
+  name: string;
+  description: string;
+  ingredients: Ingredient[];
+  steps: string[];
+  tags: string[];
+  cooking_time: number | null;
+  servings: number | null;
+  emoji: string;
+}
+
+// Response from POST /api/import and POST /api/import/text.
+export interface ImportResult {
+  draft: ImportDraft;
+  source_url: string | null;
+  source_platform: string | null;
+  source_creator: string | null;
 }

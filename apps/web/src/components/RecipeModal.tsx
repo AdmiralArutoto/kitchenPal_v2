@@ -14,6 +14,7 @@ import Pill from './Pill';
 import Button from './Button';
 import ServingScaler from './ServingScaler';
 import RecipeEditForm, { type RecipeFormValues } from './RecipeEditForm';
+import SourceAttribution from './SourceAttribution';
 
 type Props = {
   recipe: Recipe;
@@ -206,6 +207,14 @@ export default function RecipeModal({ recipe: initialRecipe, onClose, onTagClick
                 <p className="text-base leading-6 text-text-placeholder">{recipe.description}</p>
               )}
             </header>
+
+            {recipe.source === 'imported' && (
+              <SourceAttribution
+                sourceUrl={recipe.sourceUrl}
+                sourcePlatform={recipe.sourcePlatform}
+                sourceCreator={recipe.sourceCreator}
+              />
+            )}
 
             {/* Meta row */}
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-black/10 pb-4">

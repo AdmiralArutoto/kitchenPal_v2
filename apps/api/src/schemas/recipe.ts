@@ -6,7 +6,13 @@ export const IngredientSchema = z.object({
   unit: z.string(),
 });
 
-export const SourceSchema = z.enum(['manual', 'ai_generated', 'ai_modified', 'daily_rotation']);
+export const SourceSchema = z.enum([
+  'manual',
+  'ai_generated',
+  'ai_modified',
+  'daily_rotation',
+  'imported',
+]);
 
 export const RecipeBodySchema = z.object({
   name: z.string().min(1),
@@ -19,6 +25,9 @@ export const RecipeBodySchema = z.object({
   emoji: z.string().nullable().optional(),
   imageUrl: z.string().url().nullable().optional(),
   source: SourceSchema,
+  sourceUrl: z.string().nullable().optional(),
+  sourcePlatform: z.string().nullable().optional(),
+  sourceCreator: z.string().nullable().optional(),
 });
 
 export const RecipeUpdateSchema = RecipeBodySchema.partial();

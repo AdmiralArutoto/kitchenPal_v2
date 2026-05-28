@@ -11,6 +11,9 @@ export type RecipeBody = {
   emoji: string | null;
   imageUrl?: string | null;
   source: RecipeSource;
+  sourceUrl?: string | null;
+  sourcePlatform?: string | null;
+  sourceCreator?: string | null;
 };
 
 export function toRecipeBody(recipe: Recipe): RecipeBody {
@@ -24,5 +27,8 @@ export function toRecipeBody(recipe: Recipe): RecipeBody {
     servings: recipe.servings,
     emoji: recipe.emoji,
     source: recipe.source,
+    sourceUrl: recipe.sourceUrl,
+    sourcePlatform: recipe.sourcePlatform,
+    sourceCreator: recipe.sourceCreator,
   };
 }

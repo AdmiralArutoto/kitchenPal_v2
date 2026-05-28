@@ -32,7 +32,6 @@
       "Bash(dd *)",
       "Bash(shutdown *)",
       "Bash(reboot *)",
-      "Bash(:(){ :|:& };:)",
       "Read(.env)",
       "Read(.env.*)",
       "Read(~/.ssh/**)",

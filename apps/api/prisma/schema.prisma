@@ -33,6 +33,9 @@ model Recipe {
   emoji       String?
   imageUrl    String?  @map("image_url")
   source      String
+  sourceUrl       String?  @map("source_url")
+  sourcePlatform  String?  @map("source_platform")
+  sourceCreator   String?  @map("source_creator")
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt       @map("updated_at")
   profile     Profile  @relation(fields: [userId], references: [id])

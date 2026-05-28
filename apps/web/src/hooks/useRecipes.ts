@@ -48,7 +48,10 @@ export function useCreateRecipe() {
         ...body,
         id: tempId,
         userId: user?.id ?? '',
-        imageUrl: null,
+        imageUrl: body.imageUrl ?? null,
+        sourceUrl: body.sourceUrl ?? null,
+        sourcePlatform: body.sourcePlatform ?? null,
+        sourceCreator: body.sourceCreator ?? null,
         createdAt: nowIso,
         updatedAt: nowIso,
       };

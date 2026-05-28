@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ApiError } from '../lib/api';
 import { useRecipes } from '../hooks/useRecipes';
 import type { Recipe } from '../types/api';
-import AddRecipeModal from '../components/AddRecipeModal';
+import AddRecipeChooser from '../components/AddRecipeChooser';
 import Button from '../components/Button';
 import FilterPopover from '../components/FilterPopover';
 import Input from '../components/Input';
@@ -150,8 +150,8 @@ export default function Catalog() {
         />
       )}
 
-      {/* Add Recipe modal */}
-      {addingRecipe && <AddRecipeModal onClose={() => setAddingRecipe(false)} />}
+      {/* Add Recipe — intake chooser (Import / Create / Generate) */}
+      {addingRecipe && <AddRecipeChooser onClose={() => setAddingRecipe(false)} />}
     </div>
   );
 }
