@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
 import request from 'supertest';
 
 vi.mock('../lib/supabase.js', () => ({
@@ -54,6 +54,32 @@ function jsonLdHtml(recipe: Record<string, unknown>): string {
     ...recipe,
   })}</script></head><body></body></html>`;
 }
+
+// Stubs global fetch to return the given responses in order (for Supadata sync + 202-poll cases).
+function fetchReturning(...responses: Array<{ status: number; body: unknown }>) {
+  const fn = vi.fn();
+  for (const r of responses) {
+    fn.mockResolvedValueOnce({
+      ok: r.status >= 200 && r.status < 300,
+      status: r.status,
+      json: async () => r.body,
+      text: async () => JSON.stringify(r.body),
+    });
+  }
+  vi.stubGlobal('fetch', fn);
+  return fn;
+}
+
+const videoDraft = {
+  name: 'Video Bread',
+  description: 'From a clip',
+  ingredients: [{ name: 'flour', amount: 2, unit: 'cups' }],
+  steps: ['Mix', 'Bake'],
+  tags: ['bread'],
+  cooking_time: 30,
+  servings: 2,
+  emoji: '🍞',
+};
 
 // ──────────────── auth ────────────────
 
@@ -166,15 +192,6 @@ describe('POST /api/import — routing & validation', () => {
   beforeEach(() => {
     vi.resetAllMocks();
     vi.unstubAllGlobals();
-  });
-
-  it('returns 422 directing to paste for a video URL (no fetch / no LLM)', async () => {
-    const res = await authedPost('/api/import').send({
-      url: 'https://www.youtube.com/watch?v=abc123',
-    });
-    expect(res.status).toBe(422);
-    expect(res.body.error).toMatch(/video/i);
-    expect(callOpenAIJsonMock).not.toHaveBeenCalled();
   });
 
   it('returns 400 for an invalid URL', async () => {
@@ -297,6 +314,75 @@ describe('POST /api/import/image', () => {
     );
     expect(res.status).toBe(400);
     expect(callOpenAIVisionJsonMock).not.toHaveBeenCalled();
+  });
+});
+
+// ──────────────── POST /api/import — video (Supadata) ────────────────
+
+describe('POST /api/import — video via Supadata', () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    vi.unstubAllGlobals();
+    process.env.SUPADATA_API_KEY = 'test-key';
+  });
+  afterAll(() => {
+    delete process.env.SUPADATA_API_KEY;
+  });
+
+  it('YouTube URL: sync transcript → draft (source_platform youtube)', async () => {
+    fetchReturning({ status: 200, body: { content: 'mix flour and water then bake', lang: 'en' } });
+    callOpenAIJsonMock.mockResolvedValueOnce(videoDraft);
+
+    const res = await authedPost('/api/import').send({
+      url: 'https://www.youtube.com/watch?v=abc123',
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.source_platform).toBe('youtube');
+    expect(res.body.source_url).toContain('youtube.com');
+    expect(res.body.draft.name).toBe('Video Bread');
+    expect(callOpenAIJsonMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('async 202 → poll completed → draft; TikTok creator parsed from @handle', async () => {
+    fetchReturning(
+      { status: 202, body: { jobId: 'job-1' } },
+      { status: 200, body: { status: 'completed', content: 'transcript text', lang: 'en' } },
+    );
+    callOpenAIJsonMock.mockResolvedValueOnce(videoDraft);
+
+    const res = await authedPost('/api/import').send({
+      url: 'https://www.tiktok.com/@chef/video/123',
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.source_platform).toBe('tiktok');
+    expect(res.body.source_creator).toBe('@chef');
+  });
+
+  it('transcript-unavailable → 422 (offer paste), no LLM call', async () => {
+    fetchReturning({ status: 404, body: { error: 'transcript-unavailable', message: 'none' } });
+
+    const res = await authedPost('/api/import').send({
+      url: 'https://www.youtube.com/watch?v=zzz',
+    });
+
+    expect(res.status).toBe(422);
+    expect(callOpenAIJsonMock).not.toHaveBeenCalled();
+  });
+
+  it('missing SUPADATA_API_KEY → 500 for video, but other routes still work (fail-soft)', async () => {
+    delete process.env.SUPADATA_API_KEY;
+
+    const res = await authedPost('/api/import').send({
+      url: 'https://www.youtube.com/watch?v=abc',
+    });
+    expect(res.status).toBe(500);
+
+    // The function did not crash globally — the text route still works without the key.
+    callOpenAIJsonMock.mockResolvedValueOnce(videoDraft);
+    const res2 = await authedPost('/api/import/text').send({ text: 'some recipe text' });
+    expect(res2.status).toBe(200);
   });
 });
 

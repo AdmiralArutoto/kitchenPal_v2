@@ -10,6 +10,7 @@ import {
 } from '../schemas/import.js';
 import { classifyUrl } from '../lib/import/url.js';
 import { extractFromWebsite } from '../lib/import/website.js';
+import { extractFromVideo } from '../lib/import/video.js';
 import {
   callOpenAIJson,
   callOpenAIVisionJson,
@@ -49,9 +50,10 @@ function optionalField(v: unknown): string | null {
   return typeof v === 'string' && v.trim() ? v.trim() : null;
 }
 
-// Paste a URL → extract a recipe draft. Website-only for now; video platforms are recognized but
-// routed to the manual-paste fallback (422) until the Python video pipeline lands. The draft is
-// NOT persisted — the client reviews/edits, then saves via POST /api/recipes (source: 'imported').
+// Paste a URL → extract a recipe draft. Websites parse JSON-LD/HTML; video platforms (YouTube,
+// TikTok, Instagram) go through Supadata transcript → extraction LLM. Failures (no transcript,
+// blocked, etc.) surface as 422 so the client offers the manual paste/screenshot fallback. The
+// draft is NOT persisted — the client reviews/edits, then saves via POST /api/recipes (source:'imported').
 importRouter.post('/', async (req, res) => {
   const parsed = ImportUrlRequestSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -59,15 +61,15 @@ importRouter.post('/', async (req, res) => {
   }
 
   const { url, platform } = classifyUrl(parsed.data.url);
-  if (platform !== 'website') {
-    throw new HttpError(422, 'Video import is not available yet — paste the caption text instead');
-  }
+  const { draft, sourceCreator } =
+    platform === 'website'
+      ? await extractFromWebsite(url, req.log)
+      : await extractFromVideo(url, platform, req.log);
 
-  const { draft, sourceCreator } = await extractFromWebsite(url, req.log);
   const result: ImportResult = {
     draft,
     source_url: url,
-    source_platform: 'website',
+    source_platform: platform,
     source_creator: sourceCreator,
   };
   res.json(result);

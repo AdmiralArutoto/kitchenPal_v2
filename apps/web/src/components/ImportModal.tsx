@@ -280,6 +280,9 @@ export default function ImportModal({ onClose }: Props) {
               {url}
             </div>
             <ExtractProgress />
+            <p className="text-xs text-text-placeholder">
+              This can take up to a minute for videos.
+            </p>
             <div className="flex justify-end">
               <Button type="button" variant="secondary" onClick={cancelExtraction}>
                 Cancel
@@ -419,7 +422,7 @@ export default function ImportModal({ onClose }: Props) {
 // Timed 2-step indicator. Steps animate on a timer (website extraction is ~2–5s); not tied to real
 // server progress — that arrives with the SSE upgrade alongside the video pipeline.
 function ExtractProgress() {
-  const steps = ['Fetching the page', 'Reading the recipe'];
+  const steps = ['Fetching the source', 'Extracting the recipe'];
   const [active, setActive] = useState(0);
 
   useEffect(() => {

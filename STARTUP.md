@@ -106,3 +106,13 @@ Required for: recipe image uploads (manual) and DALL-E-generated images (AI reci
   `IMAGE_PROVIDER` selects the image generation backend. `openai` (default) uses `gpt-image-1-mini` at `medium` quality; `flux` is a stub for later.
 - [ ] Cost note: `gpt-image-1-mini` at medium quality is approximately **$0.005 per 1024×1024 image** (an order of magnitude cheaper than the deprecated DALL-E 3 it replaced). Each Approve on an AI recipe and each "Generate with AI" on a manual recipe triggers one call. Background regenerates cost another.
 - [ ] **Deploy note:** image generation latency (10-30s typical) exceeds Vercel hobby's 10s function timeout. Stage 7 (deploy) is currently parked; when it resumes, the image-generate route needs Vercel Pro (60s) or migration to a background worker. Local dev (`tsx watch`) has no timeout, so this is not a blocker today.
+
+## 10. Supadata API key   `[Stage: video import]`
+
+Required for: importing recipes from **video** URLs (YouTube / TikTok / Instagram). Supadata returns the video's transcript (existing captions, or AI-generated with `mode=auto`), which the backend extracts into a recipe. Replaces a self-hosted yt-dlp + Whisper pipeline (infeasible on Vercel Hobby).
+
+- [ ] Sign up at <https://supadata.ai> → create an API key.
+- [ ] Add to local `.env` (and `.env.example` if managing by hand): `SUPADATA_API_KEY=...`
+- [ ] Add to Vercel → **Settings → Environment Variables** for **Preview** (and Production when you launch).
+- [ ] **Fail-soft:** without the key, only video-URL import is disabled (returns an error → the UI auto-offers the paste/screenshot fallback). The rest of the app is unaffected — the key is read at request time, not at startup.
+- [ ] **Cost note:** `mode=auto` AI-generates a transcript when a video has no captions, which uses more Supadata credits than caption-only. Watch the free-tier limit.
