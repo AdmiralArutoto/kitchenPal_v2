@@ -93,6 +93,7 @@ importRouter.post('/text', async (req, res) => {
       content: text,
     }),
     schema: ExtractResultSchema,
+    timeoutMs: 25_000,
   });
   if ('empty' in result) {
     throw new HttpError(422, "We couldn't find a recipe in this content");

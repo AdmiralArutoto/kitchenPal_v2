@@ -219,6 +219,7 @@ async function fromHtmlFallback(
     systemPrompt: IMPORT_EXTRACT_SYSTEM_PROMPT,
     userPrompt: buildImportExtractPrompt({ platform: 'website', creator: null, content }),
     schema: ExtractResultSchema,
+    timeoutMs: 25_000,
   });
   if ('empty' in result) return null;
   return { draft: result, sourceCreator: null };

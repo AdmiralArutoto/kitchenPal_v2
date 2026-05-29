@@ -40,6 +40,8 @@ export async function extractFromVideo(
     systemPrompt: IMPORT_EXTRACT_SYSTEM_PROMPT,
     userPrompt: buildImportExtractPrompt({ platform, creator, content: transcript }),
     schema: ExtractResultSchema,
+    // Single attempt within ~20s; with the ~30s transcript budget this stays under the 60s cap.
+    timeoutMs: 20_000,
   });
   if ('empty' in result) throw new HttpError(422, "We couldn't find a recipe in this video");
 

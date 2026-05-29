@@ -34,7 +34,9 @@ async function completeJson<T>(opts: {
         response_format: { type: 'json_object' },
         messages: opts.messages,
       },
-      opts.timeoutMs ? { timeout: opts.timeoutMs } : undefined,
+      // A custom timeout means the caller has a wall-clock budget (import under the 60s function
+      // cap); disable retries so a slow call fails once rather than multiplying 2–3×.
+      opts.timeoutMs ? { timeout: opts.timeoutMs, maxRetries: 0 } : undefined,
     );
     raw = completion.choices[0]?.message?.content ?? null;
   } catch (err: unknown) {
@@ -68,10 +70,12 @@ export async function callOpenAIJson<T>(opts: {
   systemPrompt: string;
   userPrompt: string;
   schema: ZodSchema<T>;
+  timeoutMs?: number;
 }): Promise<T> {
   return completeJson({
     model: opts.model,
     schema: opts.schema,
+    timeoutMs: opts.timeoutMs,
     messages: [
       { role: 'system', content: opts.systemPrompt },
       { role: 'user', content: opts.userPrompt },

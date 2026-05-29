@@ -1,10 +1,11 @@
 import { HttpError } from '../middleware/errors.js';
 
 const BASE_URL = 'https://api.supadata.ai/v1';
-const INITIAL_TIMEOUT_MS = 30_000; // a video with no existing transcript may be processed inline
+const INITIAL_TIMEOUT_MS = 25_000; // a video with no existing transcript may be processed inline
 const POLL_TIMEOUT_MS = 10_000;
 const POLL_INTERVAL_MS = 2_000;
-const TOTAL_BUDGET_MS = 40_000; // leaves headroom for the extraction LLM under the 60s function cap
+// ~30s transcript budget + ~20s extraction LLM (single attempt) + overhead stays under the 60s cap.
+const TOTAL_BUDGET_MS = 30_000;
 
 type SupadataContent = string | Array<{ text?: string }>;
 
