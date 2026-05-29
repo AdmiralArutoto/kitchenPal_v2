@@ -27,7 +27,8 @@ const ALLOWED_IMAGE_MIME = new Set(['image/png', 'image/jpeg', 'image/webp']);
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 },
+  // 4MB — stays under Vercel's ~4.5MB serverless request-body cap.
+  limits: { fileSize: 4 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     if (ALLOWED_IMAGE_MIME.has(file.mimetype)) cb(null, true);
     else cb(new HttpError(400, 'Image must be png, jpeg, or webp'));
