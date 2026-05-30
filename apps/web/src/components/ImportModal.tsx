@@ -5,6 +5,7 @@ import {
   importFromText,
   importFromImage,
   importDraftToFormValues,
+  pollImport,
 } from '../lib/import';
 import { useCreateRecipe } from '../hooks/useRecipes';
 import { useToast } from '../contexts/ToastContext';
@@ -81,9 +82,35 @@ export default function ImportModal({ onClose }: Props) {
     const controller = new AbortController();
     abortRef.current = controller;
     try {
-      const res = await importFromUrl(trimmed, controller.signal);
-      setResult(res);
-      setPhase('draft');
+      const start = await importFromUrl(trimmed, controller.signal);
+      if (start.status === 'done') {
+        setResult(start);
+        setPhase('draft');
+        return;
+      }
+      // Instagram → async Apify job: poll until done / failed / client cap.
+      const job = {
+        runId: start.runId,
+        datasetId: start.datasetId,
+        url: start.url,
+        platform: start.platform,
+      };
+      const deadline = Date.now() + 120_000;
+      for (;;) {
+        await delay(4000, controller.signal);
+        const poll = await pollImport(job, controller.signal);
+        if (poll.status === 'done') {
+          setResult(poll);
+          setPhase('draft');
+          return;
+        }
+        if (Date.now() > deadline) {
+          setError('This is taking a while — try Paste text or Screenshot.');
+          setPasteUrl(trimmed);
+          setPhase('paste');
+          return;
+        }
+      }
     } catch (e) {
       if (isAbort(e)) return; // Cancel already reset state.
       const message = e instanceof ApiError ? e.message : 'Extraction failed. Please try again.';
@@ -91,7 +118,7 @@ export default function ImportModal({ onClose }: Props) {
         setError(message);
         setPhase('entry');
       } else {
-        // 422 (blocked / no recipe / video) or 5xx → offer manual paste, prefilled with the URL.
+        // 422 (blocked / no recipe) or 5xx → offer manual paste, prefilled with the URL.
         setError(message);
         setPasteUrl(trimmed);
         setPhase('paste');
@@ -461,6 +488,26 @@ function StepDot({ state }: { state: 'done' | 'active' | 'pending' }) {
     return <span className="h-5 w-5 animate-pulse rounded-full border-2 border-primary bg-accent-soft" aria-hidden="true" />;
   }
   return <span className="h-5 w-5 rounded-full border-2 border-border-subtle" aria-hidden="true" />;
+}
+
+// Abortable sleep — rejects with AbortError when the in-flight extraction is cancelled, so the
+// polling loop unwinds through the same isAbort() path as a fetch abort.
+function delay(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) {
+      reject(new DOMException('Aborted', 'AbortError'));
+      return;
+    }
+    const t = setTimeout(resolve, ms);
+    signal.addEventListener(
+      'abort',
+      () => {
+        clearTimeout(t);
+        reject(new DOMException('Aborted', 'AbortError'));
+      },
+      { once: true },
+    );
+  });
 }
 
 function XIcon() {

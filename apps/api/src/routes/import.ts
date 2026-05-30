@@ -5,12 +5,15 @@ import { HttpError } from '../middleware/errors.js';
 import {
   ImportUrlRequestSchema,
   ImportTextRequestSchema,
+  ImportPollRequestSchema,
   ExtractResultSchema,
   type ImportResult,
 } from '../schemas/import.js';
 import { classifyUrl } from '../lib/import/url.js';
 import { extractFromWebsite } from '../lib/import/website.js';
 import { extractFromVideo } from '../lib/import/video.js';
+import { startRun, getRunStatus, getDatasetItems } from '../lib/apify.js';
+import { actorFor, buildActorInput, runSocialCascade } from '../lib/import/social.js';
 import {
   callOpenAIJson,
   callOpenAIVisionJson,
@@ -61,18 +64,58 @@ importRouter.post('/', async (req, res) => {
   }
 
   const { url, platform } = classifyUrl(parsed.data.url);
+
+  // Instagram + TikTok → async Apify scrape (caption/comments live behind a job). Start the run and
+  // return its ids; the client polls /api/import/poll, so we never block past the 60s cap.
+  if (platform === 'instagram' || platform === 'tiktok') {
+    const run = await startRun(actorFor(platform), buildActorInput(platform, url));
+    res
+      .status(202)
+      .json({ status: 'pending', runId: run.runId, datasetId: run.datasetId, url, platform });
+    return;
+  }
+
+  // Website + YouTube extract synchronously.
   const { draft, sourceCreator } =
     platform === 'website'
       ? await extractFromWebsite(url, req.log)
       : await extractFromVideo(url, platform, req.log);
 
-  const result: ImportResult = {
+  res.json({
+    status: 'done',
     draft,
     source_url: url,
     source_platform: platform,
     source_creator: sourceCreator,
-  };
-  res.json(result);
+  } satisfies ImportResult & { status: 'done' });
+});
+
+// Poll an async social-import run started by POST /api/import. The client carries the run ids
+// (stateless — no DB). On SUCCEEDED we run the lazy cascade (link → comments → transcript).
+importRouter.post('/poll', async (req, res) => {
+  const parsed = ImportPollRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    throw new HttpError(400, parsed.error.issues.map((i) => i.message).join('; '));
+  }
+  const { runId, datasetId, url, platform } = parsed.data;
+
+  const status = await getRunStatus(runId);
+  if (status === 'SUCCEEDED') {
+    const items = await getDatasetItems(datasetId);
+    const { draft, sourceCreator } = await runSocialCascade(url, platform, items, req.log);
+    res.json({
+      status: 'done',
+      draft,
+      source_url: url,
+      source_platform: platform,
+      source_creator: sourceCreator,
+    } satisfies ImportResult & { status: 'done' });
+    return;
+  }
+  if (status === 'FAILED' || status === 'ABORTED' || status === 'TIMED-OUT') {
+    throw new HttpError(422, "We couldn't read this post — try Paste text or Screenshot");
+  }
+  res.json({ status: 'pending' });
 });
 
 // Manual fallback: extract from pasted caption / recipe text. Works for every platform. Optional

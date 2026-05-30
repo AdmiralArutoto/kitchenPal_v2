@@ -19,17 +19,30 @@ vi.mock('../lib/openai.js', async () => {
   return { ...actual, callOpenAIJson: vi.fn(), callOpenAIVisionJson: vi.fn() };
 });
 
+// Mock the Apify client (run lifecycle + dataset). website.ts + supadata.ts stay real (driven by the
+// global fetch stub) so the cascade exercises real link/transcript paths.
+vi.mock('../lib/apify.js', () => ({
+  startRun: vi.fn(),
+  getRunStatus: vi.fn(),
+  getDatasetItems: vi.fn(),
+}));
+
 const { supabaseAdmin } = await import('../lib/supabase.js');
 const { prisma } = await import('../lib/prisma.js');
 const openaiLib = await import('../lib/openai.js');
 const { classifyUrl } = await import('../lib/import/url.js');
 const { parseIngredients } = await import('../lib/import/ingredients.js');
+const apify = await import('../lib/apify.js');
+const social = await import('../lib/import/social.js');
 const { createApp } = await import('../app.js');
 
 const getUserMock = supabaseAdmin.auth.getUser as ReturnType<typeof vi.fn>;
 const profileUpsertMock = prisma.profile.upsert as ReturnType<typeof vi.fn>;
 const callOpenAIJsonMock = openaiLib.callOpenAIJson as ReturnType<typeof vi.fn>;
 const callOpenAIVisionJsonMock = openaiLib.callOpenAIVisionJson as ReturnType<typeof vi.fn>;
+const startRunMock = apify.startRun as ReturnType<typeof vi.fn>;
+const getRunStatusMock = apify.getRunStatus as ReturnType<typeof vi.fn>;
+const getDatasetItemsMock = apify.getDatasetItems as ReturnType<typeof vi.fn>;
 
 const userId = '44444444-4444-4444-4444-444444444444';
 const email = 'arthur@example.com';
@@ -344,7 +357,7 @@ describe('POST /api/import — video via Supadata', () => {
     expect(callOpenAIJsonMock).toHaveBeenCalledTimes(1);
   });
 
-  it('async 202 → poll completed → draft; TikTok creator parsed from @handle', async () => {
+  it('YouTube async 202 → poll completed → draft (status done)', async () => {
     fetchReturning(
       { status: 202, body: { jobId: 'job-1' } },
       { status: 200, body: { status: 'completed', content: 'transcript text', lang: 'en' } },
@@ -352,12 +365,13 @@ describe('POST /api/import — video via Supadata', () => {
     callOpenAIJsonMock.mockResolvedValueOnce(videoDraft);
 
     const res = await authedPost('/api/import').send({
-      url: 'https://www.tiktok.com/@chef/video/123',
+      url: 'https://www.youtube.com/watch?v=poll1',
     });
 
     expect(res.status).toBe(200);
-    expect(res.body.source_platform).toBe('tiktok');
-    expect(res.body.source_creator).toBe('@chef');
+    expect(res.body.status).toBe('done');
+    expect(res.body.source_platform).toBe('youtube');
+    expect(res.body.draft.name).toBe('Video Bread');
   });
 
   it('transcript-unavailable → 422 (offer paste), no LLM call', async () => {
@@ -383,6 +397,154 @@ describe('POST /api/import — video via Supadata', () => {
     callOpenAIJsonMock.mockResolvedValueOnce(videoDraft);
     const res2 = await authedPost('/api/import/text').send({ text: 'some recipe text' });
     expect(res2.status).toBe(200);
+  });
+});
+
+// ──────────────── POST /api/import — social (Apify async + poll cascade) ────────────────
+
+const igItems = (comment: string, captionExtra = '') => [
+  {
+    caption: `Best bread${captionExtra}`,
+    ownerUsername: 'chef',
+    latestComments: [{ ownerUsername: 'chef', text: comment, likesCount: 99 }],
+  },
+];
+
+const completeDraft = {
+  name: 'Comment Bread',
+  description: 'from the pinned comment',
+  ingredients: [
+    { name: 'flour', amount: 2, unit: 'cups' },
+    { name: 'salt', amount: 1, unit: 'tsp' },
+  ],
+  steps: ['Mix', 'Bake'],
+  tags: ['bread'],
+  cooking_time: 30,
+  servings: 2,
+  emoji: '🍞',
+};
+
+function pollBody(platform: 'instagram' | 'tiktok' = 'instagram') {
+  const url =
+    platform === 'instagram'
+      ? 'https://www.instagram.com/reel/abc/'
+      : 'https://www.tiktok.com/@chef/video/1';
+  return { runId: 'r1', datasetId: 'd1', url, platform };
+}
+
+describe('POST /api/import + /poll — social via Apify', () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    vi.unstubAllGlobals();
+    process.env.SUPADATA_API_KEY = 'test-key';
+  });
+  afterAll(() => {
+    delete process.env.SUPADATA_API_KEY;
+  });
+
+  it('Instagram URL → starts an Apify run, returns 202 pending', async () => {
+    startRunMock.mockResolvedValueOnce({ runId: 'r1', datasetId: 'd1', status: 'READY' });
+    const res = await authedPost('/api/import').send({
+      url: 'https://www.instagram.com/reel/abc/',
+    });
+    expect(res.status).toBe(202);
+    expect(res.body).toMatchObject({ status: 'pending', runId: 'r1', datasetId: 'd1', platform: 'instagram' });
+  });
+
+  it('TikTok URL → starts an Apify run, returns 202 pending', async () => {
+    startRunMock.mockResolvedValueOnce({ runId: 'r2', datasetId: 'd2', status: 'READY' });
+    const res = await authedPost('/api/import').send({
+      url: 'https://www.tiktok.com/@chef/video/1',
+    });
+    expect(res.status).toBe(202);
+    expect(res.body).toMatchObject({ status: 'pending', platform: 'tiktok' });
+  });
+
+  it('/poll while RUNNING → pending', async () => {
+    getRunStatusMock.mockResolvedValueOnce('RUNNING');
+    const res = await authedPost('/api/import/poll').send(pollBody());
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ status: 'pending' });
+  });
+
+  it('/poll SUCCEEDED, comments complete → draft WITHOUT fetching the transcript', async () => {
+    getRunStatusMock.mockResolvedValueOnce('SUCCEEDED');
+    getDatasetItemsMock.mockResolvedValueOnce(igItems('2 cups flour, 1 tsp salt — mix and bake'));
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy); // any transcript fetch would call this
+    callOpenAIJsonMock.mockResolvedValueOnce(completeDraft);
+
+    const res = await authedPost('/api/import/poll').send(pollBody());
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('done');
+    expect(res.body.draft.name).toBe('Comment Bread');
+    expect(res.body.source_platform).toBe('instagram');
+    expect(callOpenAIJsonMock).toHaveBeenCalledTimes(1);
+    expect(fetchSpy).not.toHaveBeenCalled(); // cascade stopped at comments — no Supadata
+  });
+
+  it('/poll SUCCEEDED, comments thin → lazy transcript merge completes it', async () => {
+    getRunStatusMock.mockResolvedValueOnce('SUCCEEDED');
+    getDatasetItemsMock.mockResolvedValueOnce(igItems('recipe in my video!'));
+    fetchReturning({ status: 200, body: { content: 'mix 2 cups flour with 1 tsp salt then bake' } });
+    callOpenAIJsonMock
+      .mockResolvedValueOnce({ ...completeDraft, ingredients: [{ name: 'flour', amount: 2, unit: 'cups' }], steps: [] }) // thin
+      .mockResolvedValueOnce(completeDraft); // merged with transcript → complete
+
+    const res = await authedPost('/api/import/poll').send(pollBody());
+
+    expect(res.status).toBe(200);
+    expect(res.body.draft.steps).toEqual(['Mix', 'Bake']);
+    expect(callOpenAIJsonMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('/poll FAILED → 422 (paste fallback)', async () => {
+    getRunStatusMock.mockResolvedValueOnce('FAILED');
+    const res = await authedPost('/api/import/poll').send(pollBody());
+    expect(res.status).toBe(422);
+  });
+});
+
+// ──────────────── unit: parseSocial / recipeLink ────────────────
+
+describe('parseSocial / recipeLink', () => {
+  it('instagram: creator comment ranks first, then by likes', () => {
+    const data = social.parseSocial(
+      [
+        {
+          ownerUsername: 'chef',
+          caption: 'cap',
+          latestComments: [
+            { ownerUsername: 'fan', text: 'yum', likesCount: 500 },
+            { ownerUsername: 'chef', text: 'full recipe', likesCount: 5 },
+            { ownerUsername: 'other', text: 'nice', likesCount: 50 },
+          ],
+        },
+      ],
+      'instagram',
+      'https://www.instagram.com/reel/x/',
+    );
+    expect(data.creator).toBe('@chef');
+    expect(data.comments[0].isCreator).toBe(true); // creator first despite fewer likes
+    expect(data.comments[1].author).toBe('fan'); // then most-liked
+  });
+
+  it('tiktok: creator derived from URL @handle', () => {
+    const data = social.parseSocial(
+      [{ uniqueId: 'chef', text: 'recipe', diggCount: 10 }],
+      'tiktok',
+      'https://www.tiktok.com/@chef/video/1',
+    );
+    expect(data.creator).toBe('@chef');
+    expect(data.comments[0].isCreator).toBe(true);
+  });
+
+  it('recipeLink finds a website URL, ignores social hosts', () => {
+    expect(social.recipeLink('full recipe: https://blog.example.com/pasta', [])).toContain(
+      'blog.example.com',
+    );
+    expect(social.recipeLink('see https://www.instagram.com/p/x/', [])).toBeNull();
   });
 });
 

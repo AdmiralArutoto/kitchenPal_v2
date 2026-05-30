@@ -116,3 +116,13 @@ Required for: importing recipes from **video** URLs (YouTube / TikTok / Instagra
 - [ ] Add to Vercel → **Settings → Environment Variables** for **Preview** (and Production when you launch).
 - [ ] **Fail-soft:** without the key, only video-URL import is disabled (returns an error → the UI auto-offers the paste/screenshot fallback). The rest of the app is unaffected — the key is read at request time, not at startup.
 - [ ] **Cost note:** `mode=auto` AI-generates a transcript when a video has no captions, which uses more Supadata credits than caption-only. Watch the free-tier limit.
+
+## 11. Apify token   `[Stage: Instagram/TikTok import]`
+
+Required for: importing recipes from **Instagram/TikTok**, where the recipe usually lives in the **caption / pinned comment** (or a link to the creator's blog) — which Supadata's transcript can't see. Apify scrapes the caption + comments; we run it **async** (the client polls) so it never hits Vercel's 60s cap.
+
+- [ ] Sign up at <https://apify.com> → Settings → Integrations → **API token**.
+- [ ] Add to local `.env` (and `.env.example` if managing by hand): `APIFY_TOKEN=...`
+- [ ] Add to Vercel → **Settings → Environment Variables** for **Preview** (and Production at launch).
+- [ ] **Fail-soft:** without it, only Instagram/TikTok auto-import is disabled (error → paste/screenshot fallback offered). Read at request time, not startup.
+- [ ] **Cost note:** pay-per-result, ~pennies per import; free **$5/mo** credits. The lazy cascade only pays Supadata (transcript) when the comments don't already contain a complete recipe.

@@ -13,6 +13,15 @@ export const ImportTextRequestSchema = z.object({
   source_creator: z.string().nullable().optional(),
 });
 
+// Poll body for the async social-import flow: the client carries the Apify run identifiers it
+// received from POST /api/import (we stay stateless — no DB).
+export const ImportPollRequestSchema = z.object({
+  runId: z.string().min(1),
+  datasetId: z.string().min(1),
+  url: z.string().min(1),
+  platform: z.enum(['instagram', 'tiktok']),
+});
+
 // Extracted draft (snake_case cooking_time, matching the AI-route contract). Ingredient amount is
 // always a number (0 when a quantity is implied but unstated — descriptor goes in `unit`), so the
 // draft is directly compatible with the save path (POST /api/recipes) and RecipeEditForm.

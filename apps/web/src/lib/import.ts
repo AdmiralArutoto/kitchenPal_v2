@@ -1,11 +1,27 @@
 import { apiFetch } from './api';
-import type { ImportResult, ImportDraft } from '../types/api';
+import type {
+  ImportResult,
+  ImportDraft,
+  ImportStartResult,
+  ImportPollResult,
+} from '../types/api';
 import type { RecipeFormValues } from '../components/RecipeEditForm';
 
-export function importFromUrl(url: string, signal?: AbortSignal): Promise<ImportResult> {
-  return apiFetch<ImportResult>('/api/import', {
+// Returns either a finished draft (website/YouTube/TikTok) or a pending Apify job (Instagram).
+export function importFromUrl(url: string, signal?: AbortSignal): Promise<ImportStartResult> {
+  return apiFetch<ImportStartResult>('/api/import', {
     method: 'POST',
     body: JSON.stringify({ url }),
+    signal,
+  });
+}
+
+export type ImportJob = { runId: string; datasetId: string; url: string; platform: string };
+
+export function pollImport(job: ImportJob, signal?: AbortSignal): Promise<ImportPollResult> {
+  return apiFetch<ImportPollResult>('/api/import/poll', {
+    method: 'POST',
+    body: JSON.stringify(job),
     signal,
   });
 }

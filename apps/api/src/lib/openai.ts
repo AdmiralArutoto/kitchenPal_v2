@@ -178,6 +178,44 @@ ${opts.content}
 Extract a recipe from the above into the exact JSON schema described in the system prompt.`;
 }
 
+export const IMPORT_SOCIAL_SYSTEM_PROMPT = `You extract a structured recipe from a social post (Instagram/TikTok): its caption, its top comments, and sometimes a spoken-audio transcript.
+Return ONLY valid JSON. No markdown, no preamble.
+If no recipe is present, return { "empty": true }.
+Otherwise return:
+{ "name": string, "description": string (1-2 sentences), "ingredients": [{ "name": string, "amount": number, "unit": string }], "steps": string[], "tags": string[], "cooking_time": number | null, "servings": number | null, "emoji": string }
+SOURCE PRIORITY (critical):
+- The CAPTION and TOP COMMENTS — especially the creator's own comment — are the AUTHORITATIVE source for ingredients, quantities, and steps. Creators usually write the real recipe there.
+- The SPOKEN TRANSCRIPT (when present) is supplementary and often full of filler/chatter; use it ONLY to fill gaps the written text doesn't cover. NEVER let the transcript override a quantity or step stated in the caption/comments.
+Rules:
+- Ingredient "amount" MUST be a number. Parse fractions ("1/2 cup" → 0.5). Implied-but-unstated quantity → 0 with the descriptor in "unit".
+- Do NOT invent ingredients, steps, or measurements not present in the source.
+- steps: a clean ordered array of instruction strings, numbering prefixes removed.
+- tags: cuisine/category/dietary, lowercase-first, deduped, max 5. cooking_time: integer minutes or null. servings: integer or null. emoji: one fitting food emoji.`;
+
+export function buildSocialExtractPrompt(opts: {
+  platform: string;
+  creator: string | null;
+  caption: string;
+  comments: { author: string; text: string; isCreator: boolean }[];
+  transcript?: string | null;
+}): string {
+  const parts: string[] = [`Source: ${opts.platform}`, `Creator: ${opts.creator || 'unknown'}`];
+  parts.push(`\n[CAPTION]\n${opts.caption || '(none)'}`);
+  if (opts.comments.length) {
+    const lines = opts.comments.map(
+      (c) => `- @${c.author || 'user'}${c.isCreator ? ' (CREATOR — authoritative)' : ''}: ${c.text}`,
+    );
+    parts.push(`\n[TOP COMMENTS]\n${lines.join('\n')}`);
+  }
+  if (opts.transcript?.trim()) {
+    parts.push(
+      `\n[SPOKEN TRANSCRIPT] (supplementary; may contain filler — do not override the written recipe)\n${opts.transcript}`,
+    );
+  }
+  parts.push('\nExtract the recipe into the exact JSON schema from the system prompt.');
+  return parts.join('\n');
+}
+
 export const IMPORT_VISION_SYSTEM_PROMPT = `You extract structured recipes from an image — a screenshot of a recipe, a photo of a recipe card or cookbook page, a food blog, or a social post.
 Return ONLY valid JSON. No markdown, no preamble.
 If the image contains no recipe, return { "empty": true }.

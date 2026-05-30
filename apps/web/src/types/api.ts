@@ -92,10 +92,19 @@ export interface ImportDraft {
   emoji: string;
 }
 
-// Response from POST /api/import and POST /api/import/text.
+// Response from POST /api/import/text and /api/import/image, and the 'done' case below.
 export interface ImportResult {
   draft: ImportDraft;
   source_url: string | null;
   source_platform: string | null;
   source_creator: string | null;
 }
+
+// POST /api/import returns either a finished draft (website/YouTube/TikTok) or a pending async job
+// (Instagram → Apify run the client must poll).
+export type ImportStartResult =
+  | ({ status: 'done' } & ImportResult)
+  | { status: 'pending'; runId: string; datasetId: string; url: string; platform: 'instagram' | 'tiktok' };
+
+// POST /api/import/poll while the Apify run is in progress vs finished.
+export type ImportPollResult = ({ status: 'done' } & ImportResult) | { status: 'pending' };
