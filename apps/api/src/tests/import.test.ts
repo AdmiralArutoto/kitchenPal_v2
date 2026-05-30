@@ -526,18 +526,19 @@ describe('parseSocial / recipeLink', () => {
       'https://www.instagram.com/reel/x/',
     );
     expect(data.creator).toBe('@chef');
-    expect(data.comments[0].isCreator).toBe(true); // creator first despite fewer likes
-    expect(data.comments[1].author).toBe('fan'); // then most-liked
+    expect(data.comments[0]?.isCreator).toBe(true); // creator first despite fewer likes
+    expect(data.comments[1]?.author).toBe('fan'); // then most-liked
   });
 
-  it('tiktok: creator derived from URL @handle', () => {
+  it('tiktok: parses the description as caption + author handle (no comments)', () => {
     const data = social.parseSocial(
-      [{ uniqueId: 'chef', text: 'recipe', diggCount: 10 }],
+      [{ text: '2 cups flour, mix and bake', authorMeta: { name: 'chef' } }],
       'tiktok',
       'https://www.tiktok.com/@chef/video/1',
     );
+    expect(data.caption).toBe('2 cups flour, mix and bake');
     expect(data.creator).toBe('@chef');
-    expect(data.comments[0].isCreator).toBe(true);
+    expect(data.comments).toEqual([]);
   });
 
   it('recipeLink finds a website URL, ignores social hosts', () => {

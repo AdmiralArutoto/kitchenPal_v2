@@ -23,7 +23,8 @@ type SocialData = { caption: string; comments: Comment[]; creator: string | null
 // ── which Apify actor for each platform ──
 export function actorFor(platform: Platform): string {
   if (platform === 'instagram') return 'apify~instagram-scraper';
-  if (platform === 'tiktok') return 'clockworks~tiktok-comments-scraper';
+  // TikTok recipes live in the video DESCRIPTION (not comments), so use the video-data scraper.
+  if (platform === 'tiktok') return 'clockworks~tiktok-scraper';
   throw new HttpError(422, `Social scraping not wired for ${platform} yet`);
 }
 
@@ -32,9 +33,14 @@ export function buildActorInput(platform: Platform, url: string): unknown {
     return { directUrls: [url], resultsType: 'posts', resultsLimit: 1, addParentData: false };
   }
   if (platform === 'tiktok') {
-    // `postURLs` is from the actor docs; validate the limit field against the actor's input schema on
-    // the first real run — a wrong/missing limit could scrape far more comments than needed.
-    return { postURLs: [url], maxItems: 30 };
+    // Metadata only (the description) — skip all media downloads to keep the run fast + cheap.
+    return {
+      postURLs: [url],
+      shouldDownloadVideos: false,
+      shouldDownloadCovers: false,
+      shouldDownloadSubtitles: false,
+      shouldDownloadSlideshowImages: false,
+    };
   }
   throw new HttpError(422, `Social scraping not wired for ${platform} yet`);
 }
@@ -81,27 +87,16 @@ function parseInstagram(items: unknown[]): SocialData {
   return { caption, comments, creator: owner ? `@${owner}` : null };
 }
 
-// TikTok comments scraper returns comment items ({text, diggCount, uniqueId}) but no caption — and
-// no post-owner field, so we derive the creator from the @handle in the URL to flag their comment.
+// TikTok video-data scraper: the recipe is in the DESCRIPTION (`text`); `authorMeta.name` is the
+// creator handle. This actor returns video metadata, not comments — so comments stay empty and the
+// cascade extracts from the description (then the transcript as fallback).
 function parseTikTok(items: unknown[], url: string): SocialData {
-  const creator = handleFromUrl(url);
-  const comments: Comment[] = [];
-  for (const c of items) {
-    const r = asRec(c);
-    if (!r) continue;
-    const text = str(r.text);
-    if (!text) continue;
-    const author = str(r.uniqueId);
-    comments.push({
-      author,
-      text,
-      likes: num(r.diggCount),
-      isCreator: !!creator && `@${author}` === creator,
-    });
-  }
-  comments.sort((a, b) => Number(b.isCreator) - Number(a.isCreator) || b.likes - a.likes);
-  // No caption from this actor (TikTok captions are short; transcript + comments cover the recipe).
-  return { caption: '', comments, creator };
+  const post = asRec(items[0]) ?? {};
+  const caption = str(post.text);
+  const authorMeta = asRec(post.authorMeta);
+  const handle = authorMeta ? str(authorMeta.name) : '';
+  const creator = handle ? `@${handle}` : handleFromUrl(url);
+  return { caption, comments: [], creator };
 }
 
 export function parseSocial(items: unknown[], platform: Platform, url: string): SocialData {
@@ -159,6 +154,19 @@ export async function runSocialCascade(
   log: Logger,
 ): Promise<{ draft: ImportDraft; sourceCreator: string | null }> {
   const data = parseSocial(items, platform, url);
+  // Diagnostic: reveals what the actor actually returned so we can fix field mappings if a platform
+  // parses 0 comments (Apify output shapes are actor-specific and only verifiable on a real run).
+  log.info(
+    {
+      platform,
+      itemCount: items.length,
+      sampleKeys: Object.keys((items[0] as Record<string, unknown>) ?? {}),
+      sample: JSON.stringify(items[0] ?? null).slice(0, 600),
+      parsedComments: data.comments.length,
+      hasCaption: Boolean(data.caption),
+    },
+    'social cascade: parsed dataset',
+  );
   const top = data.comments.slice(0, TOP_COMMENTS);
   let best: ImportDraft | null = null;
 
