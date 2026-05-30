@@ -5,7 +5,10 @@ import { HttpError } from '../middleware/errors.js';
 const apiKey = process.env.OPENAI_API_KEY;
 if (!apiKey) throw new Error('OPENAI_API_KEY must be set');
 
-export const openai = new OpenAI({ apiKey, timeout: 9000 });
+// 30s default (the old 9s was for Vercel's retired 10s cap; we're on 60s now and extraction calls
+// routinely run 10–18s). maxRetries:1 (down from the SDK's 2) keeps some 429/5xx resilience without
+// piling up wall-clock past the 60s function cap. Import calls override both via `timeoutMs`.
+export const openai = new OpenAI({ apiKey, timeout: 30_000, maxRetries: 1 });
 
 export const MODEL_DRAFTS = 'gpt-4o-mini';
 export const MODEL_FULL = 'gpt-4o';
