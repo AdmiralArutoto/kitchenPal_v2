@@ -154,14 +154,12 @@ export async function runSocialCascade(
   log: Logger,
 ): Promise<{ draft: ImportDraft; sourceCreator: string | null }> {
   const data = parseSocial(items, platform, url);
-  // Diagnostic: reveals what the actor actually returned so we can fix field mappings if a platform
-  // parses 0 comments (Apify output shapes are actor-specific and only verifiable on a real run).
+  // Breadcrumb for monitoring social imports — counts only (no recipe text/PII). If a future actor
+  // changes shape this flags it (parsedComments 0 / hasCaption false); add a sample back to debug.
   log.info(
     {
       platform,
       itemCount: items.length,
-      sampleKeys: Object.keys((items[0] as Record<string, unknown>) ?? {}),
-      sample: JSON.stringify(items[0] ?? null).slice(0, 600),
       parsedComments: data.comments.length,
       hasCaption: Boolean(data.caption),
     },
