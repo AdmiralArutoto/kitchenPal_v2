@@ -20,7 +20,21 @@ export const ImportPollRequestSchema = z.object({
   datasetId: z.string().min(1),
   url: z.string().min(1),
   platform: z.enum(['instagram', 'tiktok']),
+  // Set by the client once it has seen stage 'extracting' (Apify SUCCEEDED): run the cascade now.
+  finalize: z.boolean().optional(),
 });
+
+// Real progress stages streamed (sync sources) or polled (IG/TikTok). Client maps these to labels.
+export type ImportStage =
+  | 'fetching'
+  | 'reading-structured'
+  | 'ai-extracting'
+  | 'parsing-ingredients'
+  | 'fetching-transcript'
+  | 'transcribing'
+  | 'extracting'
+  | 'queued'
+  | 'scraping';
 
 // Extracted draft (snake_case cooking_time, matching the AI-route contract). Ingredient amount is
 // always a number (0 when a quantity is implied but unstated — descriptor goes in `unit`), so the

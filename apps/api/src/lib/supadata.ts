@@ -87,7 +87,7 @@ async function pollJob(jobId: string, key: string, deadline: number): Promise<st
 // Fetches a plain-text transcript for a video URL via Supadata (mode=auto: use an existing
 // transcript, else AI-generate). Large videos return 202 + jobId → polled within TOTAL_BUDGET_MS.
 // Throws HttpError on failure (422 for "no transcript" → client falls back to manual paste).
-export async function fetchTranscript(url: string): Promise<string> {
+export async function fetchTranscript(url: string, onTranscribing?: () => void): Promise<string> {
   const key = getKey();
   const deadline = Date.now() + TOTAL_BUDGET_MS;
   const params = new URLSearchParams({ url, text: 'true', mode: 'auto' });
@@ -100,6 +100,8 @@ export async function fetchTranscript(url: string): Promise<string> {
     return text;
   }
   if (res.status === 202) {
+    // No existing transcript → Supadata is AI-generating one (the slow path).
+    onTranscribing?.();
     const body = (await res.json()) as { jobId?: string };
     if (!body.jobId) throw new HttpError(502, 'Transcript service error');
     return pollJob(body.jobId, key, deadline);

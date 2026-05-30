@@ -9,7 +9,9 @@ export class ApiError extends Error {
   }
 }
 
-export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+// Performs the request with the Supabase JWT + JSON Content-Type attached, returning the raw
+// Response. Used by apiFetch (JSON) and by the import SSE consumer (which streams the body).
+export async function authedFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const {
     data: { session },
   } = await supabase.auth.getSession();
@@ -23,7 +25,11 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
     headers.set('Authorization', `Bearer ${session.access_token}`);
   }
 
-  const res = await fetch(path, { ...init, headers });
+  return fetch(path, { ...init, headers });
+}
+
+export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const res = await authedFetch(path, init);
   const text = await res.text();
   const body = text ? safeJson(text) : null;
 

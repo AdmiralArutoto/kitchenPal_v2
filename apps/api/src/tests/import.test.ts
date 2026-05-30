@@ -94,6 +94,31 @@ const videoDraft = {
   emoji: '🍞',
 };
 
+// ── SSE helpers — website/YouTube import now streams text/event-stream ──
+function parseSse(text: string) {
+  return (text ?? '').split('\n\n').flatMap((chunk) => {
+    let event = 'message';
+    const data: string[] = [];
+    for (const line of chunk.split('\n')) {
+      if (line.startsWith('event:')) event = line.slice(6).trim();
+      else if (line.startsWith('data:')) data.push(line.slice(5).trim());
+    }
+    return data.length ? [{ event, data: JSON.parse(data.join('\n')) as Record<string, unknown> }] : [];
+  });
+}
+type Sse = ReturnType<typeof parseSse>;
+const sseStages = (e: Sse) => e.filter((x) => x.event === 'progress').map((x) => x.data.stage as string);
+const sseDone = (e: Sse) =>
+  e.find((x) => x.event === 'done')?.data as
+    | {
+        draft: { name: string; ingredients: { name: string; amount: number; unit: string }[]; steps: string[]; cooking_time: number | null; servings: number | null; tags: string[] };
+        source_platform: string;
+        source_creator: string | null;
+        source_url: string | null;
+      }
+    | undefined;
+const sseError = (e: Sse) => e.find((x) => x.event === 'error')?.data as { status: number; message: string } | undefined;
+
 // ──────────────── auth ────────────────
 
 describe('import routes — missing auth', () => {
@@ -146,21 +171,24 @@ describe('POST /api/import — website JSON-LD', () => {
       }),
     );
 
-    const res = await authedPost('/api/import').send({ url: 'https://blog.example.com/pasta' });
+    const res = await authedPost('/api/import').buffer(true).send({ url: 'https://blog.example.com/pasta' });
 
     expect(res.status).toBe(200);
-    expect(res.body.source_platform).toBe('website');
-    expect(res.body.source_creator).toBe('Jane Smith');
-    expect(res.body.source_url).toContain('blog.example.com');
-    expect(res.body.draft.name).toBe('Test Pasta');
-    expect(res.body.draft.steps).toEqual(['Mix', 'Bake']);
-    expect(res.body.draft.cooking_time).toBe(30);
-    expect(res.body.draft.servings).toBe(4);
-    expect(res.body.draft.ingredients).toEqual([
+    const events = parseSse(res.text);
+    expect(sseStages(events)).toEqual(expect.arrayContaining(['fetching', 'reading-structured']));
+    const done = sseDone(events)!;
+    expect(done.source_platform).toBe('website');
+    expect(done.source_creator).toBe('Jane Smith');
+    expect(done.source_url).toContain('blog.example.com');
+    expect(done.draft.name).toBe('Test Pasta');
+    expect(done.draft.steps).toEqual(['Mix', 'Bake']);
+    expect(done.draft.cooking_time).toBe(30);
+    expect(done.draft.servings).toBe(4);
+    expect(done.draft.ingredients).toEqual([
       { name: 'flour', amount: 2, unit: 'cups' },
       { name: 'salt', amount: 0.5, unit: 'tsp' },
     ]);
-    expect(res.body.draft.tags).toContain('Italian');
+    expect(done.draft.tags).toContain('Italian');
     expect(callOpenAIJsonMock).not.toHaveBeenCalled();
   });
 });
@@ -184,20 +212,22 @@ describe('POST /api/import — HTML fallback (no JSON-LD)', () => {
       emoji: '🍲',
     });
 
-    const res = await authedPost('/api/import').send({ url: 'https://nold.example.com/stew' });
+    const res = await authedPost('/api/import').buffer(true).send({ url: 'https://nold.example.com/stew' });
 
     expect(res.status).toBe(200);
-    expect(res.body.draft.name).toBe('Fallback Stew');
-    expect(res.body.source_platform).toBe('website');
+    const events = parseSse(res.text);
+    expect(sseStages(events)).toContain('ai-extracting');
+    expect(sseDone(events)!.draft.name).toBe('Fallback Stew');
     expect(callOpenAIJsonMock).toHaveBeenCalledTimes(1);
   });
 
-  it('returns 422 when the LLM finds no recipe', async () => {
+  it('streams an error event (status 422) when the LLM finds no recipe', async () => {
     mockFetchHtml(`<html><body><article>${'random text '.repeat(40)}</article></body></html>`);
     callOpenAIJsonMock.mockResolvedValueOnce({ empty: true });
 
-    const res = await authedPost('/api/import').send({ url: 'https://nold.example.com/page' });
-    expect(res.status).toBe(422);
+    const res = await authedPost('/api/import').buffer(true).send({ url: 'https://nold.example.com/page' });
+    expect(res.status).toBe(200); // SSE already opened — error carried in the event
+    expect(sseError(parseSse(res.text))?.status).toBe(422);
   });
 });
 
@@ -217,10 +247,11 @@ describe('POST /api/import — routing & validation', () => {
     expect(res.status).toBe(400);
   });
 
-  it('returns 422 when the page is unreachable', async () => {
+  it('streams an error event (422) when the page is unreachable', async () => {
     mockFetchHtml('', false, 403);
-    const res = await authedPost('/api/import').send({ url: 'https://blocked.example.com/x' });
-    expect(res.status).toBe(422);
+    const res = await authedPost('/api/import').buffer(true).send({ url: 'https://blocked.example.com/x' });
+    expect(res.status).toBe(200);
+    expect(sseError(parseSse(res.text))?.status).toBe(422);
   });
 });
 
@@ -342,56 +373,60 @@ describe('POST /api/import — video via Supadata', () => {
     delete process.env.SUPADATA_API_KEY;
   });
 
-  it('YouTube URL: sync transcript → draft (source_platform youtube)', async () => {
+  it('YouTube sync transcript → streamed stages + draft', async () => {
     fetchReturning({ status: 200, body: { content: 'mix flour and water then bake', lang: 'en' } });
     callOpenAIJsonMock.mockResolvedValueOnce(videoDraft);
 
-    const res = await authedPost('/api/import').send({
+    const res = await authedPost('/api/import').buffer(true).send({
       url: 'https://www.youtube.com/watch?v=abc123',
     });
 
     expect(res.status).toBe(200);
-    expect(res.body.source_platform).toBe('youtube');
-    expect(res.body.source_url).toContain('youtube.com');
-    expect(res.body.draft.name).toBe('Video Bread');
+    const events = parseSse(res.text);
+    expect(sseStages(events)).toEqual(expect.arrayContaining(['fetching-transcript', 'extracting']));
+    const done = sseDone(events)!;
+    expect(done.source_platform).toBe('youtube');
+    expect(done.draft.name).toBe('Video Bread');
     expect(callOpenAIJsonMock).toHaveBeenCalledTimes(1);
   });
 
-  it('YouTube async 202 → poll completed → draft (status done)', async () => {
+  it('YouTube async 202 → poll → draft, emits the transcribing stage', async () => {
     fetchReturning(
       { status: 202, body: { jobId: 'job-1' } },
       { status: 200, body: { status: 'completed', content: 'transcript text', lang: 'en' } },
     );
     callOpenAIJsonMock.mockResolvedValueOnce(videoDraft);
 
-    const res = await authedPost('/api/import').send({
+    const res = await authedPost('/api/import').buffer(true).send({
       url: 'https://www.youtube.com/watch?v=poll1',
     });
 
     expect(res.status).toBe(200);
-    expect(res.body.status).toBe('done');
-    expect(res.body.source_platform).toBe('youtube');
-    expect(res.body.draft.name).toBe('Video Bread');
+    const events = parseSse(res.text);
+    expect(sseStages(events)).toContain('transcribing');
+    expect(sseDone(events)!.draft.name).toBe('Video Bread');
   });
 
-  it('transcript-unavailable → 422 (offer paste), no LLM call', async () => {
+  it('transcript-unavailable → error event (422), no LLM call', async () => {
     fetchReturning({ status: 404, body: { error: 'transcript-unavailable', message: 'none' } });
 
-    const res = await authedPost('/api/import').send({
+    const res = await authedPost('/api/import').buffer(true).send({
       url: 'https://www.youtube.com/watch?v=zzz',
     });
 
-    expect(res.status).toBe(422);
+    expect(res.status).toBe(200);
+    expect(sseError(parseSse(res.text))?.status).toBe(422);
     expect(callOpenAIJsonMock).not.toHaveBeenCalled();
   });
 
-  it('missing SUPADATA_API_KEY → 500 for video, but other routes still work (fail-soft)', async () => {
+  it('missing SUPADATA_API_KEY → error event (500) for video, other routes still work (fail-soft)', async () => {
     delete process.env.SUPADATA_API_KEY;
 
-    const res = await authedPost('/api/import').send({
+    const res = await authedPost('/api/import').buffer(true).send({
       url: 'https://www.youtube.com/watch?v=abc',
     });
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(200);
+    expect(sseError(parseSse(res.text))?.status).toBe(500);
 
     // The function did not crash globally — the text route still works without the key.
     callOpenAIJsonMock.mockResolvedValueOnce(videoDraft);
@@ -460,39 +495,47 @@ describe('POST /api/import + /poll — social via Apify', () => {
     expect(res.body).toMatchObject({ status: 'pending', platform: 'tiktok' });
   });
 
-  it('/poll while RUNNING → pending', async () => {
+  it('/poll RUNNING → pending with stage scraping', async () => {
     getRunStatusMock.mockResolvedValueOnce('RUNNING');
     const res = await authedPost('/api/import/poll').send(pollBody());
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ status: 'pending' });
+    expect(res.body).toEqual({ status: 'pending', stage: 'scraping' });
   });
 
-  it('/poll SUCCEEDED, comments complete → draft WITHOUT fetching the transcript', async () => {
+  it('/poll SUCCEEDED → pending with stage extracting, cascade NOT run yet', async () => {
     getRunStatusMock.mockResolvedValueOnce('SUCCEEDED');
+    const res = await authedPost('/api/import/poll').send(pollBody());
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ status: 'pending', stage: 'extracting' });
+    expect(getDatasetItemsMock).not.toHaveBeenCalled();
+    expect(callOpenAIJsonMock).not.toHaveBeenCalled();
+  });
+
+  it('/poll finalize → comments complete → draft WITHOUT fetching the transcript', async () => {
     getDatasetItemsMock.mockResolvedValueOnce(igItems('2 cups flour, 1 tsp salt — mix and bake'));
     const fetchSpy = vi.fn();
     vi.stubGlobal('fetch', fetchSpy); // any transcript fetch would call this
     callOpenAIJsonMock.mockResolvedValueOnce(completeDraft);
 
-    const res = await authedPost('/api/import/poll').send(pollBody());
+    const res = await authedPost('/api/import/poll').send({ ...pollBody(), finalize: true });
 
     expect(res.status).toBe(200);
     expect(res.body.status).toBe('done');
     expect(res.body.draft.name).toBe('Comment Bread');
     expect(res.body.source_platform).toBe('instagram');
+    expect(getRunStatusMock).not.toHaveBeenCalled(); // finalize short-circuits the status check
     expect(callOpenAIJsonMock).toHaveBeenCalledTimes(1);
     expect(fetchSpy).not.toHaveBeenCalled(); // cascade stopped at comments — no Supadata
   });
 
-  it('/poll SUCCEEDED, comments thin → lazy transcript merge completes it', async () => {
-    getRunStatusMock.mockResolvedValueOnce('SUCCEEDED');
+  it('/poll finalize → comments thin → lazy transcript merge completes it', async () => {
     getDatasetItemsMock.mockResolvedValueOnce(igItems('recipe in my video!'));
     fetchReturning({ status: 200, body: { content: 'mix 2 cups flour with 1 tsp salt then bake' } });
     callOpenAIJsonMock
       .mockResolvedValueOnce({ ...completeDraft, ingredients: [{ name: 'flour', amount: 2, unit: 'cups' }], steps: [] }) // thin
       .mockResolvedValueOnce(completeDraft); // merged with transcript → complete
 
-    const res = await authedPost('/api/import/poll').send(pollBody());
+    const res = await authedPost('/api/import/poll').send({ ...pollBody(), finalize: true });
 
     expect(res.status).toBe(200);
     expect(res.body.draft.steps).toEqual(['Mix', 'Bake']);

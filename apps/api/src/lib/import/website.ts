@@ -7,8 +7,11 @@ import {
   buildImportExtractPrompt,
   MODEL_DRAFTS,
 } from '../openai.js';
-import { ExtractResultSchema, type ImportDraft } from '../../schemas/import.js';
+import { ExtractResultSchema, type ImportDraft, type ImportStage } from '../../schemas/import.js';
 import { parseIngredients } from './ingredients.js';
+
+type OnStage = (stage: ImportStage) => void;
+const noop: OnStage = () => {};
 
 const FETCH_TIMEOUT_MS = 8_000;
 const USER_AGENT =
@@ -175,12 +178,14 @@ function findRecipeJsonLd($: cheerio.CheerioAPI): Record<string, unknown> | null
 // (caller then falls back to HTML extraction).
 async function fromJsonLd(
   node: Record<string, unknown>,
+  onStage: OnStage,
 ): Promise<{ draft: ImportDraft; sourceCreator: string | null } | null> {
   const name = asText(node.name).trim();
   const ingredientLines = toStringArray(node.recipeIngredient ?? node.ingredients);
   const steps = extractInstructions(node.recipeInstructions);
   if (!name || ingredientLines.length === 0 || steps.length === 0) return null;
 
+  onStage('parsing-ingredients');
   const ingredients = await parseIngredients(ingredientLines);
   if (ingredients.length === 0) return null;
 
@@ -210,10 +215,12 @@ function mainContent($: cheerio.CheerioAPI): string {
 
 async function fromHtmlFallback(
   $: cheerio.CheerioAPI,
+  onStage: OnStage,
 ): Promise<{ draft: ImportDraft; sourceCreator: string | null } | null> {
   const content = mainContent($).slice(0, MAX_CONTENT_CHARS);
   if (!content) return null;
 
+  onStage('ai-extracting');
   const result = await callOpenAIJson({
     model: MODEL_DRAFTS,
     systemPrompt: IMPORT_EXTRACT_SYSTEM_PROMPT,
@@ -230,18 +237,21 @@ async function fromHtmlFallback(
 export async function extractFromWebsite(
   url: string,
   log: Logger,
+  onStage: OnStage = noop,
 ): Promise<{ draft: ImportDraft; sourceCreator: string | null }> {
+  onStage('fetching');
   const html = await fetchHtml(url);
   const $ = cheerio.load(html);
 
   const node = findRecipeJsonLd($);
   if (node) {
-    const fromLd = await fromJsonLd(node);
+    onStage('reading-structured');
+    const fromLd = await fromJsonLd(node, onStage);
     if (fromLd) return fromLd;
     log.info({ url }, 'JSON-LD Recipe present but incomplete; falling back to HTML extraction');
   }
 
-  const fromHtml = await fromHtmlFallback($);
+  const fromHtml = await fromHtmlFallback($, onStage);
   if (!fromHtml) throw new HttpError(422, "We couldn't find a recipe on this page");
   return fromHtml;
 }

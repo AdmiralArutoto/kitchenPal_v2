@@ -100,11 +100,25 @@ export interface ImportResult {
   source_creator: string | null;
 }
 
-// POST /api/import returns either a finished draft (website/YouTube/TikTok) or a pending async job
-// (Instagram → Apify run the client must poll).
+// Real progress stages — streamed over SSE (website/YouTube) or polled (Instagram/TikTok).
+export type ImportStage =
+  | 'fetching'
+  | 'reading-structured'
+  | 'ai-extracting'
+  | 'parsing-ingredients'
+  | 'fetching-transcript'
+  | 'transcribing'
+  | 'extracting'
+  | 'queued'
+  | 'scraping';
+
+// POST /api/import returns either a finished draft (website/YouTube stream the 'done' event) or a
+// pending async job (Instagram/TikTok → Apify run the client must poll).
 export type ImportStartResult =
   | ({ status: 'done' } & ImportResult)
   | { status: 'pending'; runId: string; datasetId: string; url: string; platform: 'instagram' | 'tiktok' };
 
-// POST /api/import/poll while the Apify run is in progress vs finished.
-export type ImportPollResult = ({ status: 'done' } & ImportResult) | { status: 'pending' };
+// POST /api/import/poll while the Apify run is in progress (carries the current stage) vs finished.
+export type ImportPollResult =
+  | ({ status: 'done' } & ImportResult)
+  | { status: 'pending'; stage: ImportStage };

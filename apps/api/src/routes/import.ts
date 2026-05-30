@@ -14,6 +14,7 @@ import { extractFromWebsite } from '../lib/import/website.js';
 import { extractFromVideo } from '../lib/import/video.js';
 import { startRun, getRunStatus, getDatasetItems } from '../lib/apify.js';
 import { actorFor, buildActorInput, runSocialCascade } from '../lib/import/social.js';
+import { startSse } from '../lib/sse.js';
 import {
   callOpenAIJson,
   callOpenAIVisionJson,
@@ -75,19 +76,26 @@ importRouter.post('/', async (req, res) => {
     return;
   }
 
-  // Website + YouTube extract synchronously.
-  const { draft, sourceCreator } =
-    platform === 'website'
-      ? await extractFromWebsite(url, req.log)
-      : await extractFromVideo(url, platform, req.log);
-
-  res.json({
-    status: 'done',
-    draft,
-    source_url: url,
-    source_platform: platform,
-    source_creator: sourceCreator,
-  } satisfies ImportResult & { status: 'done' });
+  // Website + YouTube extract synchronously (< 60s) → stream real progress over SSE. The extractor's
+  // onStage callback emits the actual stages it reaches. Errors after the stream opens can't change
+  // the HTTP status, so they're sent as an `error` event carrying the intended status.
+  const sse = startSse(res);
+  try {
+    const { draft, sourceCreator } =
+      platform === 'website'
+        ? await extractFromWebsite(url, req.log, sse.stage)
+        : await extractFromVideo(url, platform, req.log, sse.stage);
+    sse.done({
+      status: 'done',
+      draft,
+      source_url: url,
+      source_platform: platform,
+      source_creator: sourceCreator,
+    } satisfies ImportResult & { status: 'done' });
+  } catch (err) {
+    req.log.warn({ err, url }, 'import SSE error');
+    sse.error(err instanceof HttpError ? err.status : 500, err instanceof HttpError ? err.message : 'Import failed');
+  }
 });
 
 // Poll an async social-import run started by POST /api/import. The client carries the run ids
@@ -97,10 +105,12 @@ importRouter.post('/poll', async (req, res) => {
   if (!parsed.success) {
     throw new HttpError(400, parsed.error.issues.map((i) => i.message).join('; '));
   }
-  const { runId, datasetId, url, platform } = parsed.data;
+  const { runId, datasetId, url, platform, finalize } = parsed.data;
 
-  const status = await getRunStatus(runId);
-  if (status === 'SUCCEEDED') {
+  // The client sets `finalize` once it has seen stage 'extracting' (the run SUCCEEDED) — fetch the
+  // dataset and run the lazy cascade now. Kept separate from the status check so the poll loop can
+  // surface a real 'extracting' stage before this (longer) request runs.
+  if (finalize) {
     const items = await getDatasetItems(datasetId);
     const { draft, sourceCreator } = await runSocialCascade(url, platform, items, req.log);
     res.json({
@@ -112,10 +122,16 @@ importRouter.post('/poll', async (req, res) => {
     } satisfies ImportResult & { status: 'done' });
     return;
   }
+
+  const status = await getRunStatus(runId);
+  if (status === 'SUCCEEDED') {
+    res.json({ status: 'pending', stage: 'extracting' });
+    return;
+  }
   if (status === 'FAILED' || status === 'ABORTED' || status === 'TIMED-OUT') {
     throw new HttpError(422, "We couldn't read this post — try Paste text or Screenshot");
   }
-  res.json({ status: 'pending' });
+  res.json({ status: 'pending', stage: status === 'READY' ? 'queued' : 'scraping' });
 });
 
 // Manual fallback: extract from pasted caption / recipe text. Works for every platform. Optional

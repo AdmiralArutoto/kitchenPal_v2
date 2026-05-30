@@ -7,10 +7,12 @@ import {
   buildImportExtractPrompt,
   MODEL_DRAFTS,
 } from '../openai.js';
-import { ExtractResultSchema, type ImportDraft } from '../../schemas/import.js';
+import { ExtractResultSchema, type ImportDraft, type ImportStage } from '../../schemas/import.js';
 import type { Platform } from './url.js';
 
 const MAX_TRANSCRIPT_CHARS = 15_000;
+type OnStage = (stage: ImportStage) => void;
+const noop: OnStage = () => {};
 
 // Best-effort creator handle from the URL path (TikTok/Instagram expose @handle). YouTube has no
 // handle in the URL → null (channel-metadata enrichment is a future nicety). Attribution still
@@ -28,13 +30,20 @@ export async function extractFromVideo(
   url: string,
   platform: Platform,
   log: Logger,
+  onStage: OnStage = noop,
 ): Promise<{ draft: ImportDraft; sourceCreator: string | null }> {
-  const transcript = (await fetchTranscript(url)).slice(0, MAX_TRANSCRIPT_CHARS);
+  onStage('fetching-transcript');
+  // Supadata fires the callback when it falls back to AI-generating the transcript (202 path).
+  const transcript = (await fetchTranscript(url, () => onStage('transcribing'))).slice(
+    0,
+    MAX_TRANSCRIPT_CHARS,
+  );
   if (!transcript.trim()) throw new HttpError(422, "We couldn't find a recipe in this video");
 
   const creator = creatorFromUrl(url, platform);
   log.info({ platform, len: transcript.length }, 'video transcript fetched');
 
+  onStage('extracting');
   const result = await callOpenAIJson({
     model: MODEL_DRAFTS,
     systemPrompt: IMPORT_EXTRACT_SYSTEM_PROMPT,

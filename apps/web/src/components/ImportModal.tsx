@@ -9,7 +9,7 @@ import {
 } from '../lib/import';
 import { useCreateRecipe } from '../hooks/useRecipes';
 import { useToast } from '../contexts/ToastContext';
-import type { ImportResult } from '../types/api';
+import type { ImportResult, ImportStage } from '../types/api';
 import Modal from './Modal';
 import Button from './Button';
 import Input from './Input';
@@ -41,6 +41,7 @@ export default function ImportModal({ onClose }: Props) {
   const [result, setResult] = useState<ImportResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [stages, setStages] = useState<ImportStage[]>([]);
   const abortRef = useRef<AbortController | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -73,22 +74,29 @@ export default function ImportModal({ onClose }: Props) {
     return e instanceof DOMException && e.name === 'AbortError';
   }
 
+  function pushStage(s: ImportStage) {
+    setStages((prev) => (prev[prev.length - 1] === s ? prev : [...prev, s]));
+  }
+
   async function runUrlExtract() {
     const trimmed = url.trim();
     if (!trimmed || busy) return;
     setError(null);
+    setStages([]);
     setBusy(true);
     setPhase('extracting');
     const controller = new AbortController();
     abortRef.current = controller;
     try {
-      const start = await importFromUrl(trimmed, controller.signal);
+      // Website/YouTube stream stages via onStage; IG/TikTok return a pending job.
+      const start = await importFromUrl(trimmed, { onStage: pushStage, signal: controller.signal });
       if (start.status === 'done') {
         setResult(start);
         setPhase('draft');
         return;
       }
-      // Instagram → async Apify job: poll until done / failed / client cap.
+      // IG/TikTok → poll for the real stage (queued → scraping → extracting). Once 'extracting'
+      // (Apify done), the next poll carries finalize:true so the server runs the cascade.
       const job = {
         runId: start.runId,
         datasetId: start.datasetId,
@@ -96,14 +104,17 @@ export default function ImportModal({ onClose }: Props) {
         platform: start.platform,
       };
       const deadline = Date.now() + 120_000;
+      let readyToFinalize = false;
       for (;;) {
-        await delay(4000, controller.signal);
-        const poll = await pollImport(job, controller.signal);
+        await delay(readyToFinalize ? 0 : 4000, controller.signal);
+        const poll = await pollImport(job, { finalize: readyToFinalize, signal: controller.signal });
         if (poll.status === 'done') {
           setResult(poll);
           setPhase('draft');
           return;
         }
+        pushStage(poll.stage);
+        if (poll.stage === 'extracting') readyToFinalize = true;
         if (Date.now() > deadline) {
           setError('This is taking a while — try Paste text or Screenshot.');
           setPasteUrl(trimmed);
@@ -179,6 +190,7 @@ export default function ImportModal({ onClose }: Props) {
     abortRef.current = null;
     setBusy(false);
     setError(null);
+    setStages([]);
     setPhase('entry');
   }
 
@@ -306,7 +318,7 @@ export default function ImportModal({ onClose }: Props) {
             <div className="truncate rounded-lg bg-bg-input px-3 py-2 text-sm text-text-muted">
               {url}
             </div>
-            <ExtractProgress />
+            <ExtractProgress stages={stages} />
             <p className="text-xs text-text-placeholder">
               This can take up to a minute for videos.
             </p>
@@ -446,26 +458,33 @@ export default function ImportModal({ onClose }: Props) {
   );
 }
 
-// Timed 2-step indicator. Steps animate on a timer (website extraction is ~2–5s); not tied to real
-// server progress — that arrives with the SSE upgrade alongside the video pipeline.
-function ExtractProgress() {
-  const steps = ['Fetching the source', 'Extracting the recipe'];
-  const [active, setActive] = useState(0);
+// Real progress: each stage the server reports (streamed via SSE for website/YouTube, polled for
+// IG/TikTok) is rendered as it arrives — the latest is active (spinner), earlier ones are done.
+const STAGE_LABELS: Record<ImportStage, string> = {
+  fetching: 'Fetching the page',
+  'reading-structured': 'Reading structured recipe data',
+  'ai-extracting': 'Reading the page with AI',
+  'parsing-ingredients': 'Parsing ingredients',
+  'fetching-transcript': 'Fetching the transcript',
+  transcribing: 'Generating a transcript',
+  extracting: 'Extracting the recipe',
+  queued: 'Starting…',
+  scraping: 'Reading the post',
+};
 
-  useEffect(() => {
-    const t = setTimeout(() => setActive(1), 1600);
-    return () => clearTimeout(t);
-  }, []);
-
+function ExtractProgress({ stages }: { stages: ImportStage[] }) {
+  if (stages.length === 0) {
+    return <p className="text-sm text-text-muted">Starting…</p>;
+  }
   return (
     <ul className="flex flex-col gap-3">
-      {steps.map((label, i) => {
-        const state = i < active ? 'done' : i === active ? 'active' : 'pending';
+      {stages.map((stage, i) => {
+        const active = i === stages.length - 1;
         return (
-          <li key={label} className="flex items-center gap-3 text-sm">
-            <StepDot state={state} />
-            <span className={state === 'pending' ? 'text-text-placeholder' : 'text-text-default'}>
-              {label}
+          <li key={`${stage}-${i}`} className="flex items-center gap-3 text-sm">
+            <StepDot state={active ? 'active' : 'done'} />
+            <span className={active ? 'text-text-default' : 'text-text-muted'}>
+              {STAGE_LABELS[stage]}
             </span>
           </li>
         );
