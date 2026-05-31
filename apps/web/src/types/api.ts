@@ -38,6 +38,10 @@ export interface Recipe {
   sourceCreator: string | null;
   createdAt: string;
   updatedAt: string;
+  // Client-only transient flag (never sent by the backend): set while a chosen "Generate with AI"
+  // image is being produced in the background after create, so cards/modal show a loader, not the
+  // emoji, until the real imageUrl lands. Cleared when the image work resolves or fails.
+  imageGenerating?: boolean;
 }
 
 export interface Draft {
@@ -58,6 +62,37 @@ export interface FullRecipeResponse {
   cooking_time: number;
   servings: number;
   emoji: string;
+}
+
+// Server-computed diff returned by POST /api/ai/modify alongside the modified recipe (see
+// apps/api/src/lib/diff.ts), powering the Modify studio's old→new rendering.
+export type DiffStatus = 'unchanged' | 'changed' | 'added' | 'removed';
+
+export interface IngredientDiff {
+  status: DiffStatus;
+  old?: string;
+  new?: string;
+}
+
+export interface StepToken {
+  text: string;
+  changed: boolean;
+}
+
+export interface StepDiff {
+  status: DiffStatus;
+  old?: string;
+  tokens: StepToken[];
+}
+
+export interface ModifyDiff {
+  ingredients: IngredientDiff[];
+  steps: StepDiff[];
+}
+
+export interface ModifyResponse {
+  recipe: FullRecipeResponse;
+  diff: ModifyDiff;
 }
 
 // A recipe in a daily rotation batch — not yet persisted (no id, userId, source, timestamps).

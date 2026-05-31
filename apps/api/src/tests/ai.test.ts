@@ -148,7 +148,12 @@ describe('POST /api/ai/modify', () => {
     });
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual(fullRecipe);
+    expect(res.body.recipe).toEqual(fullRecipe);
+    // Diff computed server-side: original (empty) → modified adds the pasta ingredient + boil step.
+    expect(res.body.diff.ingredients).toEqual([{ status: 'added', new: '200 g pasta' }]);
+    expect(res.body.diff.steps).toEqual([
+      { status: 'added', tokens: [{ text: 'boil', changed: true }] },
+    ]);
     const call = callOpenAIJsonMock.mock.calls[0]![0];
     expect(call.model).toBe('gpt-4o');
     expect(call.userPrompt).toContain('Modification: make it dairy-free');

@@ -1,72 +1,78 @@
-import { NavLink, useNavigate } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
+import { Link, NavLink } from 'react-router-dom';
+import { useAddRecipe } from '../contexts/AddRecipeContext';
 import LogoMark from './LogoMark';
+import Button from './Button';
+import AvatarMenu from './AvatarMenu';
 
 const links = [
-  { to: '/home', label: 'Recipes' },
-  { to: '/catalog', label: 'Collections' },
+  { to: '/home', label: 'Home' },
+  { to: '/catalog', label: 'Catalog' },
   { to: '/about', label: 'About' },
 ];
 
 export default function Nav() {
-  const { signOut } = useAuth();
-  const navigate = useNavigate();
-
-  async function handleLogout() {
-    await signOut();
-    navigate('/', { replace: true });
-  }
+  const { openAddRecipe } = useAddRecipe();
 
   return (
     <header className="border-b border-black/10 bg-bg-card">
-      <div className="mx-auto flex h-[71px] w-full max-w-[1562px] items-center justify-between px-6">
-        <div className="flex items-center gap-2">
+      {/* Sheet is max-w-[1100px] with no padding; +48 (= 2×px-6) lands the logo/actions on its edges. */}
+      <div className="relative mx-auto flex h-[71px] w-full max-w-[1148px] items-center justify-between px-6">
+        {/* Logo — left, routes to Home */}
+        <Link
+          to="/home"
+          aria-label="KitchenPal home"
+          className="flex items-center gap-2 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        >
           <LogoMark size={32} />
           <span className="text-xl font-semibold text-text-default">KitchenPal</span>
-        </div>
-        <nav className="flex items-center gap-6">
+        </Link>
+
+        {/* Links — in normal flow on mobile (stay visible), absolutely centered on md+ so they
+            don't shift with the side widths */}
+        <nav className="flex items-center gap-4 md:absolute md:left-1/2 md:-translate-x-1/2 md:gap-8">
           {links.map((link) => (
             <NavLink
               key={link.to}
               to={link.to}
               className={({ isActive }) =>
                 `text-sm font-medium transition-colors ${
-                  isActive ? 'text-text-default' : 'text-text-muted hover:text-text-default'
+                  isActive ? 'text-primary' : 'text-text-muted hover:text-text-default'
                 }`
               }
             >
               {link.label}
             </NavLink>
           ))}
-          <button
-            type="button"
-            onClick={handleLogout}
-            className="inline-flex items-center gap-1 text-xs font-medium text-text-footer-muted hover:text-text-default"
-            aria-label="Logout"
-          >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
-              aria-hidden="true"
-            >
-              <g
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-                <polyline points="16 17 21 12 16 7" />
-                <line x1="21" y1="12" x2="9" y2="12" />
-              </g>
-            </svg>
-            Logout
-          </button>
         </nav>
+
+        {/* Actions — right */}
+        <div className="flex items-center gap-3">
+          <Button type="button" onClick={openAddRecipe} aria-label="Add Recipe">
+            <PlusIcon />
+            <span className="ml-2 hidden sm:inline">Add Recipe</span>
+          </Button>
+          <AvatarMenu />
+        </div>
       </div>
     </header>
+  );
+}
+
+function PlusIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <line x1="12" y1="5" x2="12" y2="19" />
+      <line x1="5" y1="12" x2="19" y2="12" />
+    </svg>
   );
 }

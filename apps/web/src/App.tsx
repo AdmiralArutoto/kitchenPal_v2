@@ -10,6 +10,12 @@ import VerifyEmail from './routes/VerifyEmail';
 import Home from './routes/Home';
 import Catalog from './routes/Catalog';
 import About from './routes/About';
+import Account from './routes/Account';
+import Settings from './routes/Settings';
+import Contact from './routes/Contact';
+import Privacy from './routes/Privacy';
+import Terms from './routes/Terms';
+import Faq from './routes/Faq';
 import { queryClient } from './lib/queryClient';
 
 const router = createBrowserRouter([
@@ -24,6 +30,12 @@ const router = createBrowserRouter([
           { path: '/home', element: <Home /> },
           { path: '/catalog', element: <Catalog /> },
           { path: '/about', element: <About /> },
+          { path: '/account', element: <Account /> },
+          { path: '/settings', element: <Settings /> },
+          { path: '/contact', element: <Contact /> },
+          { path: '/privacy', element: <Privacy /> },
+          { path: '/terms', element: <Terms /> },
+          { path: '/faq', element: <Faq /> },
         ],
       },
     ],

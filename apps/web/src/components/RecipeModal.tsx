@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react';
-import { apiFetch, ApiError } from '../lib/api';
 import { toRecipeBody } from '../lib/recipe';
 import {
   useDeleteRecipe,
@@ -8,13 +7,14 @@ import {
   useUpdateRecipe,
   useUploadImage,
 } from '../hooks/useRecipes';
-import type { FullRecipeResponse, Recipe } from '../types/api';
+import type { Recipe } from '../types/api';
 import Modal from './Modal';
 import Pill from './Pill';
 import Button from './Button';
 import ServingScaler from './ServingScaler';
 import RecipeEditForm, { type RecipeFormValues } from './RecipeEditForm';
 import SourceAttribution from './SourceAttribution';
+import ModifyStudio from './ModifyStudio';
 
 type Props = {
   recipe: Recipe;
@@ -29,9 +29,7 @@ type Mode = 'idle' | 'modifying' | 'editing';
 export default function RecipeModal({ recipe: initialRecipe, onClose, onTagClick }: Props) {
   const [recipe, setRecipe] = useState<Recipe>(initialRecipe);
   const [mode, setMode] = useState<Mode>('idle');
-  const [comment, setComment] = useState('');
   const [servingsOverride, setServingsOverride] = useState(initialRecipe.servings ?? 1);
-  const [busy, setBusy] = useState<'apply' | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const updateMutation = useUpdateRecipe();
@@ -57,7 +55,6 @@ export default function RecipeModal({ recipe: initialRecipe, onClose, onTagClick
   }, [recipe.servings, recipe.id]);
 
   const baseServings = recipe.servings ?? 1;
-  const isModified = recipe !== initialRecipe;
 
   function scaleAmount(amount: number): number {
     const ratio = servingsOverride / baseServings;
@@ -67,54 +64,6 @@ export default function RecipeModal({ recipe: initialRecipe, onClose, onTagClick
   function startModify() {
     setError(null);
     setMode('modifying');
-  }
-
-  function cancelModify() {
-    setError(null);
-    setMode('idle');
-    setComment('');
-    setRecipe(initialRecipe);
-  }
-
-  async function applyModification() {
-    const trimmed = comment.trim();
-    if (!trimmed || busy) return;
-    setBusy('apply');
-    setError(null);
-    try {
-      const response = await apiFetch<FullRecipeResponse>('/api/ai/modify', {
-        method: 'POST',
-        body: JSON.stringify({
-          recipe: toRecipeBody(recipe),
-          comment: trimmed,
-        }),
-      });
-      setRecipe({
-        ...recipe,
-        name: response.name,
-        description: response.description,
-        ingredients: response.ingredients,
-        steps: response.steps,
-        tags: response.tags,
-        cookingTime: response.cooking_time,
-        servings: response.servings,
-        emoji: response.emoji,
-      });
-      setComment('');
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Failed to modify recipe');
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  function approveModification() {
-    if (!isModified) return;
-    updateMutation.mutate({
-      id: recipe.id,
-      body: { ...toRecipeBody(recipe), source: 'ai_modified' },
-    });
-    onClose();
   }
 
   function handleSaveEdit(values: RecipeFormValues) {
@@ -159,6 +108,10 @@ export default function RecipeModal({ recipe: initialRecipe, onClose, onTagClick
     if (imageBusy || !recipe.imageUrl) return;
     if (!window.confirm('Remove this recipe image?')) return;
     removeImageMutation.mutate(recipe.id);
+  }
+
+  if (mode === 'modifying') {
+    return <ModifyStudio recipe={recipe} onClose={() => setMode('idle')} />;
   }
 
   if (mode === 'editing') {
@@ -280,7 +233,7 @@ export default function RecipeModal({ recipe: initialRecipe, onClose, onTagClick
                   <span className="text-7xl">{recipe.emoji ?? '🍽️'}</span>
                 </div>
               )}
-              {generateImageMutation.isPending && (
+              {(generateImageMutation.isPending || recipe.imageGenerating) && (
                 <div className="absolute inset-0 flex items-center justify-center bg-black/40 text-sm font-medium text-white">
                   Generating image…
                 </div>
@@ -365,42 +318,6 @@ export default function RecipeModal({ recipe: initialRecipe, onClose, onTagClick
               </div>
             )}
 
-            {/* Modify with AI panel */}
-            {mode === 'modifying' && (
-              <section className="flex flex-col gap-3 rounded-[10px] border border-accent-peach bg-accent-bg-soft p-4">
-                <h4 className="inline-flex items-center gap-2 text-sm font-medium text-accent-text">
-                  <SparkleIcon /> Modify with AI
-                </h4>
-                <textarea
-                  value={comment}
-                  onChange={(e) => setComment(e.target.value)}
-                  placeholder="e.g., Make it dairy-free, simplify the steps, add more vegetables..."
-                  disabled={busy === 'apply'}
-                  rows={3}
-                  className="w-full resize-none rounded-lg border border-border-subtle bg-bg-card px-3 py-2 text-sm text-text-default placeholder:text-text-placeholder focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-60"
-                />
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={applyModification}
-                    disabled={!comment.trim() || busy === 'apply'}
-                  >
-                    {busy === 'apply' ? 'Modifying…' : 'Apply Modifications'}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    onClick={cancelModify}
-                    disabled={busy === 'apply'}
-                  >
-                    Cancel
-                  </Button>
-                </div>
-              </section>
-            )}
-
             {error && <p className="text-sm text-danger">{error}</p>}
           </div>
         </div>
@@ -409,53 +326,28 @@ export default function RecipeModal({ recipe: initialRecipe, onClose, onTagClick
         <div className="grid grid-cols-1 md:grid-cols-2">
           <div className="hidden md:block" />
           <div className="flex flex-wrap justify-end gap-2 p-5">
-            {mode === 'idle' ? (
-              <>
-                <Button type="button" variant="secondary" size="sm" onClick={startModify}>
-                  <SparkleIcon /> <span className="ml-2">Modify with AI</span>
-                </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => {
-                    setError(null);
-                    setMode('editing');
-                  }}
-                >
-                  <PencilIcon /> <span className="ml-2">Edit</span>
-                </Button>
-                <button
-                  type="button"
-                  onClick={handleDelete}
-                  className="inline-flex h-8 items-center gap-2 rounded-lg border border-border-subtle bg-bg-card px-3 text-sm font-medium text-danger hover:bg-bg-toggle"
-                >
-                  <TrashIcon />
-                  <span>Delete</span>
-                </button>
-              </>
-            ) : (
-              <>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  onClick={cancelModify}
-                  disabled={busy === 'apply'}
-                >
-                  Discard
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={approveModification}
-                  disabled={!isModified || busy === 'apply'}
-                  title={!isModified ? 'Apply a modification first to enable Approve' : undefined}
-                >
-                  Approve
-                </Button>
-              </>
-            )}
+            <Button type="button" variant="secondary" size="sm" onClick={startModify}>
+              <SparkleIcon /> <span className="ml-2">Modify with AI</span>
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                setError(null);
+                setMode('editing');
+              }}
+            >
+              <PencilIcon /> <span className="ml-2">Edit</span>
+            </Button>
+            <button
+              type="button"
+              onClick={handleDelete}
+              className="inline-flex h-8 items-center gap-2 rounded-lg border border-border-subtle bg-bg-card px-3 text-sm font-medium text-danger hover:bg-bg-toggle"
+            >
+              <TrashIcon />
+              <span>Delete</span>
+            </button>
           </div>
         </div>
       </div>

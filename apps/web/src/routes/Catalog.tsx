@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ApiError } from '../lib/api';
 import { useRecipes } from '../hooks/useRecipes';
+import { useAddRecipe } from '../contexts/AddRecipeContext';
 import type { Recipe } from '../types/api';
-import AddRecipeChooser from '../components/AddRecipeChooser';
 import Button from '../components/Button';
-import FilterPopover from '../components/FilterPopover';
+import FilterDialog from '../components/FilterDialog';
 import Input from '../components/Input';
 import RecipeCard from '../components/RecipeCard';
 import RecipeModal from '../components/RecipeModal';
@@ -19,14 +19,18 @@ const SORT_OPTIONS: ReadonlyArray<{ value: SortValue; label: string }> = [
   { value: 'name_desc', label: 'Z–A' },
 ];
 
+// How many tag chips to show inline before collapsing the rest into a "+N" that opens the dialog.
+const TAG_CHIP_CAP = 8;
+
 export default function Catalog() {
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [sort, setSort] = useState<SortValue>('newest');
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
-  const [addingRecipe, setAddingRecipe] = useState(false);
+  const [filterOpen, setFilterOpen] = useState(false);
 
+  const { openAddRecipe } = useAddRecipe();
   const { data: recipes = [], isLoading, error } = useRecipes();
   const errorMessage = error
     ? error instanceof ApiError
@@ -73,6 +77,19 @@ export default function Catalog() {
   const countLabel =
     total === 1 ? '1 recipe in your collection' : `${total} recipes in your collection`;
 
+  // Tag chips: selected tags first, then the rest, capped — overflow collapses into a "+N" that
+  // opens the full filter dialog.
+  const orderedTags = [
+    ...selectedTags.filter((t) => allTags.includes(t)),
+    ...allTags.filter((t) => !selectedTags.includes(t)),
+  ];
+  const visibleTagChips = orderedTags.slice(0, TAG_CHIP_CAP);
+  const hiddenTagCount = allTags.length - visibleTagChips.length;
+
+  function toggleTag(tag: string) {
+    setSelectedTags((cur) => (cur.includes(tag) ? cur.filter((t) => t !== tag) : [...cur, tag]));
+  }
+
   return (
     <div className="mx-auto flex w-full max-w-[1024px] flex-col gap-8 px-6 pt-12 pb-12">
       {/* Header */}
@@ -83,33 +100,74 @@ export default function Catalog() {
           </h1>
           <p className="text-base text-text-muted">{countLabel}</p>
         </div>
-        <Button type="button" onClick={() => setAddingRecipe(true)}>
+        <Button type="button" onClick={openAddRecipe}>
           <PlusIcon />
           <span className="ml-2">Add Recipe</span>
         </Button>
       </div>
 
-      {/* Search + Sort + Filter row */}
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative w-full max-w-[448px] flex-1">
-          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-placeholder">
-            <SearchIcon />
-          </span>
-          <Input
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            placeholder="Search recipes or tags..."
-            className="bg-bg-card pl-10"
-          />
+      {/* Search + Sort + Filter, with a quick tag-chip row beneath */}
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative w-full max-w-[448px] flex-1">
+            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-placeholder">
+              <SearchIcon />
+            </span>
+            <Input
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              placeholder="Search recipes or tags..."
+              className="bg-bg-card pl-10"
+            />
+          </div>
+          <div className="flex gap-2">
+            <SortDropdown<SortValue> value={sort} onChange={setSort} options={SORT_OPTIONS} />
+            <button
+              type="button"
+              onClick={() => setFilterOpen(true)}
+              aria-haspopup="dialog"
+              className={`inline-flex h-9 items-center gap-2 rounded-lg border bg-bg-card px-3 text-sm font-medium hover:bg-bg-toggle ${
+                hasFilter ? 'border-primary text-primary' : 'border-border-subtle text-text-default'
+              }`}
+            >
+              <FilterIcon />
+              <span>{hasFilter ? `Filter (${selectedTags.length})` : 'Filter'}</span>
+            </button>
+          </div>
         </div>
-        <div className="flex gap-2">
-          <SortDropdown<SortValue> value={sort} onChange={setSort} options={SORT_OPTIONS} />
-          <FilterPopover
-            value={selectedTags}
-            onChange={setSelectedTags}
-            availableTags={allTags}
-          />
-        </div>
+
+        {allTags.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2">
+            {visibleTagChips.map((tag) => {
+              const active = selectedTags.includes(tag);
+              return (
+                <button
+                  key={tag}
+                  type="button"
+                  onClick={() => toggleTag(tag)}
+                  aria-pressed={active}
+                  className={`inline-flex h-7 items-center rounded-full px-3 text-xs font-medium transition-colors ${
+                    active
+                      ? 'bg-primary text-white'
+                      : 'border border-border-subtle bg-bg-card text-text-body hover:bg-bg-toggle'
+                  }`}
+                >
+                  {tag}
+                </button>
+              );
+            })}
+            {hiddenTagCount > 0 && (
+              <button
+                type="button"
+                onClick={() => setFilterOpen(true)}
+                title="Show all tags"
+                className="inline-flex h-7 items-center rounded-full border border-dashed border-border-subtle px-3 text-xs font-medium text-text-muted hover:border-primary hover:text-primary"
+              >
+                …+{hiddenTagCount}
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Error */}
@@ -150,8 +208,14 @@ export default function Catalog() {
         />
       )}
 
-      {/* Add Recipe — intake chooser (Import / Create / Generate) */}
-      {addingRecipe && <AddRecipeChooser onClose={() => setAddingRecipe(false)} />}
+      {/* Filter dialog — opened by the Filter button and the "+N" tag chip */}
+      <FilterDialog
+        open={filterOpen}
+        onClose={() => setFilterOpen(false)}
+        value={selectedTags}
+        onChange={setSelectedTags}
+        availableTags={allTags}
+      />
     </div>
   );
 }
@@ -167,6 +231,24 @@ function compareRecipes(a: Recipe, b: Recipe, sort: SortValue): number {
     case 'name_desc':
       return b.name.localeCompare(a.name);
   }
+}
+
+function FilterIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+    </svg>
+  );
 }
 
 function PlusIcon() {

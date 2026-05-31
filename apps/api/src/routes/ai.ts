@@ -18,6 +18,7 @@ import {
   FULL_SYSTEM_PROMPT,
   MODIFY_SYSTEM_PROMPT,
 } from '../lib/openai.js';
+import { buildModifyDiff } from '../lib/diff.js';
 
 export const aiRouter = Router();
 aiRouter.use(authMiddleware);
@@ -82,5 +83,7 @@ aiRouter.post('/modify', async (req, res) => {
     userPrompt,
     schema: FullRecipeResponseSchema,
   });
-  res.json(result);
+  // Compute a deterministic diff (original request recipe vs the AI result) for the Modify studio.
+  const diff = buildModifyDiff(recipe, result);
+  res.json({ recipe: result, diff });
 });

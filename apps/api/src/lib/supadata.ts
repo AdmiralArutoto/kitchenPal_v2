@@ -4,6 +4,7 @@ const BASE_URL = 'https://api.supadata.ai/v1';
 const INITIAL_TIMEOUT_MS = 25_000; // a video with no existing transcript may be processed inline
 const POLL_TIMEOUT_MS = 10_000;
 const POLL_INTERVAL_MS = 2_000;
+const META_TIMEOUT_MS = 10_000; // /youtube/video is a quick metadata read (~3s observed)
 // ~30s transcript budget + ~20s extraction LLM (single attempt) + overhead stays under the 60s cap.
 const TOTAL_BUDGET_MS = 30_000;
 
@@ -26,6 +27,13 @@ async function supaGet(path: string, key: string, timeoutMs: number): Promise<Re
       headers: { 'x-api-key': key, Accept: 'application/json' },
     });
   } catch {
+    // The bare catch can't tell a timeout from a real network failure; the AbortController flag can.
+    // A slow video (Supadata generating a transcript inline past timeoutMs, common for caption-less
+    // Shorts) is a timeout → 504, not "unreachable". Both route the client to the paste fallback,
+    // but the message/log must be honest (502 sent us chasing a non-existent outage).
+    if (controller.signal.aborted) {
+      throw new HttpError(504, 'Transcript is taking too long — paste the caption instead');
+    }
     throw new HttpError(502, 'Transcript service unreachable');
   } finally {
     clearTimeout(timer);
@@ -107,4 +115,36 @@ export async function fetchTranscript(url: string, onTranscribing?: () => void):
     return pollJob(body.jobId, key, deadline);
   }
   return readError(res);
+}
+
+export type YoutubeMeta = {
+  title: string;
+  description: string;
+  channel: string | null;
+  // Languages with an available transcript. `undefined` = field absent (treat as unknown, don't
+  // assume "no transcript"); `[]` = Supadata explicitly reports none → skip the slow transcript path.
+  transcriptLanguages: string[] | undefined;
+};
+
+// Fast YouTube metadata (title, description, channel, available transcript languages) via Supadata's
+// /youtube/video (~3s). The description is where Shorts and most cooking videos put the recipe — far
+// faster and more reliable than waiting on a (possibly non-existent) transcript. Accepts a full URL
+// as the `id` param. Throws HttpError on failure (the caller treats this as best-effort).
+export async function fetchYoutubeMeta(url: string): Promise<YoutubeMeta> {
+  const key = getKey();
+  const params = new URLSearchParams({ id: url });
+  const res = await supaGet(`/youtube/video?${params.toString()}`, key, META_TIMEOUT_MS);
+  if (!res.ok) return readError(res);
+  const body = (await res.json()) as {
+    title?: string;
+    description?: string;
+    channel?: { name?: string } | null;
+    transcriptLanguages?: string[];
+  };
+  return {
+    title: body.title ?? '',
+    description: body.description ?? '',
+    channel: body.channel?.name ?? null,
+    transcriptLanguages: Array.isArray(body.transcriptLanguages) ? body.transcriptLanguages : undefined,
+  };
 }

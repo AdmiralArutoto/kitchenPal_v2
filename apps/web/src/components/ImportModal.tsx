@@ -1,15 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
-import { ApiError } from '../lib/api';
+import { apiFetch, ApiError } from '../lib/api';
 import {
   importFromUrl,
   importFromText,
   importFromImage,
   importDraftToFormValues,
   pollImport,
+  detectPlatform,
+  normalizeUrl,
+  type DetectedPlatform,
 } from '../lib/import';
 import { useCreateRecipe } from '../hooks/useRecipes';
+import { useImagePicker } from '../hooks/useImagePicker';
 import { useToast } from '../contexts/ToastContext';
-import type { ImportResult, ImportStage } from '../types/api';
+import type { ModifyResponse, ImportResult, ImportStage } from '../types/api';
 import Modal from './Modal';
 import Button from './Button';
 import Input from './Input';
@@ -20,18 +24,29 @@ import SourceAttribution from './SourceAttribution';
 
 type Props = {
   onClose: () => void;
+  // When the chooser already collected a URL, ImportModal opens on the platform-confirm step.
+  initialUrl?: string;
 };
 
-type Phase = 'entry' | 'extracting' | 'paste' | 'draft';
+type Phase = 'entry' | 'confirm' | 'extracting' | 'paste' | 'draft';
 
 const SOURCE_BADGES = ['🌐 Web', 'Instagram', 'TikTok', 'YouTube'];
 
-// Recipe import flow: paste URL → extract → review → save. Falls back to manual paste when the URL
-// path fails (blocked site, no recipe found, video URL). The draft is reviewed/edited via the
+// Per-platform copy for the confirm card — what we'll read for each source.
+const PLATFORM_META: Record<DetectedPlatform, { emoji: string; label: string; hint: string }> = {
+  instagram: { emoji: '🎬', label: 'Instagram · Reel', hint: 'We’ll read the caption & comments.' },
+  tiktok: { emoji: '🎵', label: 'TikTok', hint: 'We’ll read the description.' },
+  youtube: { emoji: '▶️', label: 'YouTube', hint: 'We’ll read the transcript.' },
+  website: { emoji: '🌐', label: 'Recipe site', hint: 'We’ll read the page.' },
+  unknown: { emoji: '🔗', label: 'Link', hint: 'We’ll try to extract the recipe.' },
+};
+
+// Recipe import flow: confirm source → extract → review → save. Falls back to manual paste when the
+// URL path fails (blocked site, no recipe found, video URL). The draft is reviewed/edited via the
 // shared RecipeEditForm and saved through useCreateRecipe with source: 'imported'.
-export default function ImportModal({ onClose }: Props) {
-  const [phase, setPhase] = useState<Phase>('entry');
-  const [url, setUrl] = useState('');
+export default function ImportModal({ onClose, initialUrl }: Props) {
+  const [phase, setPhase] = useState<Phase>(initialUrl ? 'confirm' : 'entry');
+  const [url, setUrl] = useState(initialUrl ?? '');
   const [pasteText, setPasteText] = useState('');
   const [pasteUrl, setPasteUrl] = useState('');
   const [fallbackMode, setFallbackMode] = useState<'text' | 'image'>('text');
@@ -47,6 +62,11 @@ export default function ImportModal({ onClose }: Props) {
 
   const createMutation = useCreateRecipe();
   const { showToast } = useToast();
+
+  // Image picker for the draft review (Upload / Generate / Skip), same as AddRecipeModal. Hook is
+  // called unconditionally (before the draft early-return); emoji is just the placeholder display.
+  const draftEmoji = result ? importDraftToFormValues(result.draft).emoji ?? '🍽️' : '🍽️';
+  const { slot: imageSlot, imageWork } = useImagePicker(draftEmoji);
 
   // Abort any in-flight extraction if the modal unmounts.
   useEffect(() => () => abortRef.current?.abort(), []);
@@ -79,7 +99,7 @@ export default function ImportModal({ onClose }: Props) {
   }
 
   async function runUrlExtract() {
-    const trimmed = url.trim();
+    const trimmed = url.trim() ? normalizeUrl(url) : '';
     if (!trimmed || busy) return;
     setError(null);
     setStages([]);
@@ -216,9 +236,45 @@ export default function ImportModal({ onClose }: Props) {
         sourcePlatform: result.source_platform,
         sourceCreator: result.source_creator,
       },
+      imageWork,
     });
     showToast('Recipe imported to your catalog', 'success');
     onClose();
+  }
+
+  // Inline Modify-with-AI for the draft: run the current edited values through /api/ai/modify and
+  // hand the result back to RecipeEditForm (which applies it into its own fields). Mirrors the
+  // RecipeModal modify path; the recipe stays a draft until the user clicks Save.
+  async function handleModify(
+    current: RecipeFormValues,
+    comment: string,
+  ): Promise<RecipeFormValues> {
+    const { recipe } = await apiFetch<ModifyResponse>('/api/ai/modify', {
+      method: 'POST',
+      body: JSON.stringify({
+        recipe: {
+          name: current.name,
+          description: current.description,
+          ingredients: current.ingredients,
+          steps: current.steps,
+          tags: current.tags,
+          cookingTime: current.cookingTime,
+          servings: current.servings,
+          emoji: current.emoji,
+        },
+        comment,
+      }),
+    });
+    return {
+      name: recipe.name,
+      description: recipe.description,
+      cookingTime: recipe.cooking_time,
+      servings: recipe.servings,
+      ingredients: recipe.ingredients,
+      steps: recipe.steps,
+      tags: recipe.tags,
+      emoji: recipe.emoji,
+    };
   }
 
   // ──────────────── draft review ────────────────
@@ -241,6 +297,8 @@ export default function ImportModal({ onClose }: Props) {
             onSave={handleSave}
             saving={false}
             submitLabel="Save Recipe"
+            imageSlot={imageSlot}
+            onModify={handleModify}
           />
         </div>
       </Modal>
@@ -259,7 +317,9 @@ export default function ImportModal({ onClose }: Props) {
             <p className="text-sm text-text-muted">
               {phase === 'paste'
                 ? 'Paste the text or upload a screenshot — we’ll extract the recipe.'
-                : 'Paste a link from a recipe site, Instagram, TikTok, or YouTube.'}
+                : phase === 'confirm'
+                  ? 'Confirm the source, then extract.'
+                  : 'Paste a link from a recipe site, Instagram, TikTok, or YouTube.'}
             </p>
           </div>
           <button
@@ -309,6 +369,43 @@ export default function ImportModal({ onClose }: Props) {
               <Button type="button" onClick={runUrlExtract} disabled={!url.trim() || busy}>
                 Extract recipe
               </Button>
+            </div>
+          </>
+        )}
+
+        {phase === 'confirm' && (
+          <>
+            <Input
+              autoFocus
+              type="url"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  runUrlExtract();
+                }
+              }}
+              placeholder="instagram.com/reel/Cx4hN2…"
+            />
+            <DetectedSourceCard platform={detectPlatform(url)} />
+            {error && <p className="text-sm text-danger">{error}</p>}
+            <div className="flex items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={goToPaste}
+                className="text-sm font-medium text-primary hover:underline"
+              >
+                Or paste recipe text instead
+              </button>
+              <div className="flex gap-2">
+                <Button type="button" variant="secondary" onClick={onClose}>
+                  Cancel
+                </Button>
+                <Button type="button" onClick={runUrlExtract} disabled={!url.trim() || busy}>
+                  Extract recipe
+                </Button>
+              </div>
             </div>
           </>
         )}
@@ -455,6 +552,25 @@ export default function ImportModal({ onClose }: Props) {
         )}
       </div>
     </Modal>
+  );
+}
+
+// Platform-confirm card — shows which source we detected from the URL before extracting (display
+// only; the actual classification happens server-side on Extract).
+function DetectedSourceCard({ platform }: { platform: DetectedPlatform }) {
+  const meta = PLATFORM_META[platform];
+  return (
+    <div className="flex items-center gap-3 rounded-lg border border-border-subtle bg-bg-input p-3">
+      <span className="text-2xl" aria-hidden="true">
+        {meta.emoji}
+      </span>
+      <div className="flex flex-col">
+        <span className="text-xs font-semibold uppercase tracking-wide text-text-placeholder">
+          {meta.label}
+        </span>
+        <span className="text-sm text-text-body">{meta.hint}</span>
+      </div>
+    </div>
   );
 }
 

@@ -39,7 +39,7 @@ export function useCreateRecipe() {
   return useMutation<Recipe, Error, CreateRecipeVars, { prev: Recipe[] | undefined; tempId: string }>({
     mutationFn: ({ body }) =>
       apiFetch<Recipe>('/api/recipes', { method: 'POST', body: JSON.stringify(body) }),
-    onMutate: async ({ body }) => {
+    onMutate: async ({ body, imageWork }) => {
       await qc.cancelQueries({ queryKey: RECIPES_KEY });
       const prev = qc.getQueryData<Recipe[]>(RECIPES_KEY);
       const tempId = `temp-${crypto.randomUUID()}`;
@@ -54,6 +54,9 @@ export function useCreateRecipe() {
         sourceCreator: body.sourceCreator ?? null,
         createdAt: nowIso,
         updatedAt: nowIso,
+        // Show the generating loader from first paint when image work is queued. Survives the
+        // calling modal unmounting; cleared when the image work resolves/fails in onSuccess.
+        imageGenerating: Boolean(imageWork),
       };
       qc.setQueryData<Recipe[]>(RECIPES_KEY, (old) => [optimistic, ...(old ?? [])]);
       return { prev, tempId };
@@ -63,13 +66,16 @@ export function useCreateRecipe() {
       showToast('Failed to save recipe. Please try again.', 'error');
     },
     onSuccess: (real, vars, ctx) => {
+      const work = vars.imageWork;
+      // Server `real` has no imageGenerating field; keep the loader on until the image work
+      // resolves below (it carries over to the card even if the create modal already closed).
+      const merged: Recipe = work ? { ...real, imageGenerating: true } : real;
       qc.setQueryData<Recipe[]>(RECIPES_KEY, (old) =>
-        (old ?? []).map((r) => (r.id === ctx.tempId ? real : r)),
+        (old ?? []).map((r) => (r.id === ctx.tempId ? merged : r)),
       );
 
       // Chain follow-up image work via direct apiFetch (not via the image hooks)
       // so it runs even if the calling component has already unmounted.
-      const work = vars.imageWork;
       if (!work) return;
 
       const apply = work.type === 'upload'
@@ -85,14 +91,16 @@ export function useCreateRecipe() {
 
       apply()
         .then((fresh) => patchRecipeInCache(qc, fresh))
-        .catch(() =>
+        .catch(() => {
+          // Clear the loader → fall back to the emoji, and surface a retry hint.
+          patchRecipeInCache(qc, { ...real, imageGenerating: false });
           showToast(
             work.type === 'upload'
               ? 'Image upload failed. You can retry from the recipe.'
               : 'Image generation failed. You can retry from the recipe.',
             'error',
-          ),
-        );
+          );
+        });
     },
   });
 }

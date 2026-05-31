@@ -29,6 +29,10 @@ type Props = {
   // Override the right-column hero (default = emoji over gradient). Used by AddRecipeModal
   // for the new-recipe image picker; existing-recipe edit flows leave this unset.
   imageSlot?: ReactNode;
+  // Opt-in inline "Modify with AI". When provided, renders a comment panel; on Apply it receives
+  // the CURRENT edited values + comment, and the returned values are applied back into the form.
+  // The caller runs the actual AI request (e.g. POST /api/ai/modify). Used by the import draft.
+  onModify?: (current: RecipeFormValues, comment: string) => Promise<RecipeFormValues>;
 };
 
 type IngredientRow = { amountText: string; name: string };
@@ -46,6 +50,7 @@ export default function RecipeEditForm({
   subtitle,
   externalError,
   imageSlot,
+  onModify,
 }: Props) {
   const [name, setName] = useState(initialValues.name);
   const [description, setDescription] = useState(initialValues.description ?? '');
@@ -68,7 +73,14 @@ export default function RecipeEditForm({
   );
   const [tags, setTags] = useState<string[]>(initialValues.tags);
   const [tagInput, setTagInput] = useState('');
+  const [emoji, setEmoji] = useState<string | null>(initialValues.emoji);
   const [error, setError] = useState<string | null>(null);
+
+  // Inline Modify-with-AI (rendered only when `onModify` is provided).
+  const [modifyOpen, setModifyOpen] = useState(false);
+  const [modifyComment, setModifyComment] = useState('');
+  const [modifyBusy, setModifyBusy] = useState(false);
+  const [modifyError, setModifyError] = useState<string | null>(null);
 
   function updateIngredient(i: number, patch: Partial<IngredientRow>) {
     setIngredients((prev) => prev.map((row, idx) => (idx === i ? { ...row, ...patch } : row)));
@@ -163,8 +175,66 @@ export default function RecipeEditForm({
       ingredients: parsedIngredients,
       steps: filteredSteps,
       tags,
-      emoji: initialValues.emoji,
+      emoji,
     });
+  }
+
+  // Best-effort snapshot of the current fields for AI modify — no validation errors (the user may
+  // still be mid-edit). Unparseable amounts keep their text as the unit (amount 0).
+  function collectValues(): RecipeFormValues {
+    const collected: Ingredient[] = [];
+    for (const row of ingredients) {
+      const amountText = row.amountText.trim();
+      const nameText = row.name.trim();
+      if (!amountText && !nameText) continue;
+      const parsed = parseAmount(amountText);
+      collected.push(parsed ? { ...parsed, name: nameText } : { amount: 0, unit: amountText, name: nameText });
+    }
+    const ct = cookingTime.trim() ? parseInt(cookingTime, 10) : null;
+    const sv = servings.trim() ? parseInt(servings, 10) : null;
+    return {
+      name: name.trim(),
+      description: description.trim() || null,
+      cookingTime: ct != null && !isNaN(ct) ? ct : null,
+      servings: sv != null && !isNaN(sv) ? sv : null,
+      ingredients: collected,
+      steps: steps.map((s) => s.trim()).filter(Boolean),
+      tags,
+      emoji,
+    };
+  }
+
+  // Apply an AI-modified result back into the form's own state.
+  function applyValues(v: RecipeFormValues) {
+    setName(v.name);
+    setDescription(v.description ?? '');
+    setCookingTime(v.cookingTime != null ? String(v.cookingTime) : '');
+    setServings(v.servings != null ? String(v.servings) : '1');
+    setIngredients(
+      v.ingredients.length > 0
+        ? v.ingredients.map((i) => ({ amountText: `${formatAmount(i.amount)} ${i.unit}`.trim(), name: i.name }))
+        : [{ amountText: '', name: '' }],
+    );
+    setSteps(v.steps.length > 0 ? v.steps : ['']);
+    setTags(v.tags);
+    setEmoji(v.emoji);
+  }
+
+  async function handleApplyModify() {
+    const trimmed = modifyComment.trim();
+    if (!trimmed || modifyBusy || !onModify) return;
+    setModifyBusy(true);
+    setModifyError(null);
+    try {
+      const next = await onModify(collectValues(), trimmed);
+      applyValues(next);
+      setModifyComment('');
+      setModifyOpen(false);
+    } catch (e) {
+      setModifyError(e instanceof Error ? e.message : 'Failed to modify recipe');
+    } finally {
+      setModifyBusy(false);
+    }
   }
 
   const displayError = error ?? externalError ?? null;
@@ -188,6 +258,63 @@ export default function RecipeEditForm({
               )}
               {subtitle && <p className="text-sm text-text-placeholder">{subtitle}</p>}
             </header>
+          )}
+
+          {onModify && (
+            <div className="flex flex-col gap-2 rounded-lg border border-accent-peach bg-accent-bg-soft p-3">
+              {!modifyOpen ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setModifyError(null);
+                    setModifyOpen(true);
+                  }}
+                  className="self-start text-sm font-medium text-accent-text hover:underline"
+                >
+                  ✨ Modify with AI
+                </button>
+              ) : (
+                <>
+                  <label className="text-sm font-medium text-text-default">Modify with AI</label>
+                  <Textarea
+                    autoFocus
+                    value={modifyComment}
+                    onChange={(e) => setModifyComment(e.target.value)}
+                    placeholder="e.g. make it vegan, halve the servings, swap chicken for tofu"
+                    rows={2}
+                    disabled={modifyBusy}
+                  />
+                  {modifyError && (
+                    <p className="text-sm text-danger" role="alert">
+                      {modifyError}
+                    </p>
+                  )}
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      disabled={modifyBusy}
+                      onClick={() => {
+                        setModifyOpen(false);
+                        setModifyComment('');
+                        setModifyError(null);
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={modifyBusy || !modifyComment.trim()}
+                      onClick={handleApplyModify}
+                    >
+                      {modifyBusy ? 'Applying…' : 'Apply'}
+                    </Button>
+                  </div>
+                </>
+              )}
+            </div>
           )}
 
           <FormField label="Recipe Name">
@@ -403,7 +530,7 @@ export default function RecipeEditForm({
           <Button type="button" variant="secondary" onClick={onCancel} disabled={saving}>
             Cancel
           </Button>
-          <Button type="submit" disabled={saving}>
+          <Button type="submit" disabled={saving || modifyBusy}>
             {saving ? 'Saving…' : submitLabel}
           </Button>
         </div>

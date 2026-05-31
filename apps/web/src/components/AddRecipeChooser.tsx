@@ -1,69 +1,40 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import Modal from './Modal';
+import Input from './Input';
+import Button from './Button';
 import AddRecipeModal from './AddRecipeModal';
+import GenerateModal from './GenerateModal';
 import ImportModal from './ImportModal';
 
 type Props = {
   onClose: () => void;
 };
 
-type Mode = 'choose' | 'create' | 'import';
+type Mode = 'choose' | 'import' | 'manual' | 'generate';
 
-type Option = {
-  mode: Mode | 'generate';
-  emoji: string;
-  title: string;
-  description: string;
-};
-
-// Intake chooser for "+ Add Recipe" — Import / Create / Generate in priority order (import-first,
-// per the product's shift toward an import-and-store app). Import opens the extraction flow,
-// Create opens the manual form, Generate routes to Home's AI generation bar.
-const OPTIONS: Option[] = [
-  {
-    mode: 'import',
-    emoji: '🔗',
-    title: 'Import from a link',
-    description: 'Paste a recipe URL — or a caption from Instagram, TikTok, or YouTube.',
-  },
-  {
-    mode: 'create',
-    emoji: '✏️',
-    title: 'Create manually',
-    description: 'Write your own recipe from scratch.',
-  },
-  {
-    mode: 'generate',
-    emoji: '✨',
-    title: 'Generate with AI',
-    description: 'Describe a dish and let AI draft it for you.',
-  },
-];
-
+// Import-first intake for "+ Add Recipe": a dominant "Import from a link" card with the URL field
+// inline (paste → Import hands the URL to ImportModal, which opens on its platform-confirm step),
+// plus secondary Manual (AddRecipeModal) and Generate (GenerateModal) cards. Matches v2_import_modal.
 export default function AddRecipeChooser({ onClose }: Props) {
   const [mode, setMode] = useState<Mode>('choose');
-  const navigate = useNavigate();
+  const [url, setUrl] = useState('');
 
-  if (mode === 'create') return <AddRecipeModal onClose={onClose} />;
-  if (mode === 'import') return <ImportModal onClose={onClose} />;
-
-  function pick(option: Option['mode']) {
-    if (option === 'generate') {
-      navigate('/home');
-      onClose();
-      return;
-    }
-    setMode(option);
+  function startImport() {
+    if (!url.trim()) return;
+    setMode('import');
   }
 
+  if (mode === 'import') return <ImportModal initialUrl={url.trim()} onClose={onClose} />;
+  if (mode === 'manual') return <AddRecipeModal onClose={onClose} />;
+  if (mode === 'generate') return <GenerateModal onClose={onClose} />;
+
   return (
-    <Modal open ariaLabel="Add a recipe" onClose={onClose} size="sm">
+    <Modal open ariaLabel="Add a recipe" onClose={onClose} size="lg">
       <div className="flex flex-col gap-5 p-6">
         <header className="flex items-start justify-between gap-4">
           <div className="flex flex-col gap-1">
-            <h2 className="text-lg font-semibold text-text-default">Add a Recipe</h2>
-            <p className="text-sm text-text-muted">How would you like to add it?</p>
+            <h2 className="text-lg font-semibold text-text-default">Add a recipe</h2>
+            <p className="text-sm text-text-muted">Choose how you’d like to add one</p>
           </div>
           <button
             type="button"
@@ -75,26 +46,130 @@ export default function AddRecipeChooser({ onClose }: Props) {
           </button>
         </header>
 
-        <div className="flex flex-col gap-3">
-          {OPTIONS.map((opt) => (
-            <button
-              key={opt.title}
-              type="button"
-              onClick={() => pick(opt.mode)}
-              className="flex items-center gap-4 rounded-xl border border-border-subtle bg-bg-card p-4 text-left transition-colors hover:border-primary hover:bg-bg-page"
-            >
-              <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent-soft text-xl">
-                {opt.emoji}
-              </span>
-              <span className="flex flex-col gap-0.5">
-                <span className="text-sm font-semibold text-text-default">{opt.title}</span>
-                <span className="text-sm text-text-muted">{opt.description}</span>
-              </span>
-            </button>
-          ))}
+        {/* Dominant import card */}
+        <div className="flex flex-col gap-3 rounded-xl border border-accent-peach bg-accent-bg-soft p-5">
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center rounded-full bg-primary px-2.5 py-0.5 text-xs font-semibold text-white">
+              Recommended
+            </span>
+            <span className="text-primary">
+              <SparkleIcon />
+            </span>
+          </div>
+          <div className="flex flex-col gap-1">
+            <h3 className="text-lg font-semibold text-text-default">Import from a link</h3>
+            <p className="text-sm text-text-muted">
+              Paste a reel, short, TikTok, or blog URL — we’ll extract the recipe.
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <Input
+              autoFocus
+              type="url"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  startImport();
+                }
+              }}
+              placeholder="instagram.com/reel/Cx4hN2…"
+              className="bg-bg-card"
+            />
+            <Button type="button" onClick={startImport} disabled={!url.trim()}>
+              Import
+            </Button>
+          </div>
+        </div>
+
+        {/* Secondary options */}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <SecondaryCard
+            kicker="Manual"
+            icon={<PencilIcon />}
+            title="Type it in"
+            description="Full control. Best for your own recipes or pulled from a cookbook."
+            onClick={() => setMode('manual')}
+          />
+          <SecondaryCard
+            kicker="AI"
+            icon={<SparkleIcon />}
+            title="Generate with AI"
+            description="Describe a dish — we’ll sketch a starting point."
+            onClick={() => setMode('generate')}
+          />
         </div>
       </div>
     </Modal>
+  );
+}
+
+function SecondaryCard({
+  kicker,
+  icon,
+  title,
+  description,
+  onClick,
+}: {
+  kicker: string;
+  icon: React.ReactNode;
+  title: string;
+  description: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex flex-col gap-1.5 rounded-xl border border-border-subtle bg-bg-card p-4 text-left transition-colors hover:border-primary hover:bg-bg-page"
+    >
+      <span className="text-xs font-semibold uppercase tracking-wide text-text-placeholder">
+        {kicker}
+      </span>
+      <span className="flex items-center gap-2 text-base font-semibold text-text-default">
+        <span className="text-primary">{icon}</span>
+        {title}
+      </span>
+      <span className="text-sm text-text-muted">{description}</span>
+    </button>
+  );
+}
+
+function SparkleIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M12 3l2 6 6 2-6 2-2 6-2-6-6-2 6-2 2-6z" />
+    </svg>
+  );
+}
+
+function PencilIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5Z" />
+    </svg>
   );
 }
 

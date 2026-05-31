@@ -44,6 +44,36 @@ export const NormalizedMealResponseSchema = z.union([
   z.object({ skip: z.literal(true), reason: z.string() }),
 ]);
 
+// Modify diff — server-computed (see lib/diff.ts), returned alongside the modified recipe so the
+// Modify studio can render old→new ingredient changes and word-level step highlights.
+export const DiffStatusSchema = z.enum(['unchanged', 'changed', 'added', 'removed']);
+
+export const IngredientDiffSchema = z.object({
+  status: DiffStatusSchema,
+  old: z.string().optional(),
+  new: z.string().optional(),
+});
+
+export const StepTokenSchema = z.object({ text: z.string(), changed: z.boolean() });
+
+export const StepDiffSchema = z.object({
+  status: DiffStatusSchema,
+  old: z.string().optional(),
+  tokens: z.array(StepTokenSchema),
+});
+
+export const ModifyDiffSchema = z.object({
+  ingredients: z.array(IngredientDiffSchema),
+  steps: z.array(StepDiffSchema),
+});
+
+export const ModifyResponseSchema = z.object({
+  recipe: FullRecipeResponseSchema,
+  diff: ModifyDiffSchema,
+});
+
 export type Draft = z.infer<typeof DraftSchema>;
 export type FullRecipeResponse = z.infer<typeof FullRecipeResponseSchema>;
 export type NormalizedMealResponse = z.infer<typeof NormalizedMealResponseSchema>;
+export type ModifyDiff = z.infer<typeof ModifyDiffSchema>;
+export type ModifyResponse = z.infer<typeof ModifyResponseSchema>;

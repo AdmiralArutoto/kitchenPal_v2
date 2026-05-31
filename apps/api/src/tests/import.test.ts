@@ -373,8 +373,54 @@ describe('POST /api/import — video via Supadata', () => {
     delete process.env.SUPADATA_API_KEY;
   });
 
-  it('YouTube sync transcript → streamed stages + draft', async () => {
-    fetchReturning({ status: 200, body: { content: 'mix flour and water then bake', lang: 'en' } });
+  it('description holds the recipe → extracts from it, no transcript fetch', async () => {
+    // The common Shorts case: recipe is in the description; metadata is the only network call.
+    const fetchMock = fetchReturning({
+      status: 200,
+      body: {
+        title: 'Bread Donuts',
+        description: 'Recipe:\n1. Cut bread edges\n2. Dip in milk\n3. Fry on medium\n4. Add ganache',
+        channel: { name: 'Foodies Corner' },
+        transcriptLanguages: [],
+      },
+    });
+    callOpenAIJsonMock.mockResolvedValueOnce(videoDraft);
+
+    const res = await authedPost('/api/import').buffer(true).send({
+      url: 'https://www.youtube.com/shorts/abc123',
+    });
+
+    expect(res.status).toBe(200);
+    const done = sseDone(parseSse(res.text))!;
+    expect(done.source_platform).toBe('youtube');
+    expect(done.draft.name).toBe('Video Bread');
+    expect(done.source_creator).toBe('Foodies Corner'); // channel name from metadata
+    expect(callOpenAIJsonMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1); // metadata only — transcript never fetched
+  });
+
+  it('no recipe in description + no transcript → 422 fast, no transcript fetch, no LLM', async () => {
+    // The exact failing case: caption-less Short. We must NOT wait ~25s on a non-existent transcript.
+    const fetchMock = fetchReturning({
+      status: 200,
+      body: { description: 'follow me! #shorts #viral', transcriptLanguages: [] },
+    });
+
+    const res = await authedPost('/api/import').buffer(true).send({
+      url: 'https://www.youtube.com/shorts/none',
+    });
+
+    expect(res.status).toBe(200);
+    expect(sseError(parseSse(res.text))?.status).toBe(422);
+    expect(callOpenAIJsonMock).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(1); // metadata only — no transcript attempt
+  });
+
+  it('no recipe in description → falls back to transcript → draft', async () => {
+    fetchReturning(
+      { status: 200, body: { description: '', channel: { name: 'Chef' }, transcriptLanguages: ['en'] } },
+      { status: 200, body: { content: 'mix flour and water then bake', lang: 'en' } },
+    );
     callOpenAIJsonMock.mockResolvedValueOnce(videoDraft);
 
     const res = await authedPost('/api/import').buffer(true).send({
@@ -387,11 +433,13 @@ describe('POST /api/import — video via Supadata', () => {
     const done = sseDone(events)!;
     expect(done.source_platform).toBe('youtube');
     expect(done.draft.name).toBe('Video Bread');
+    expect(done.source_creator).toBe('Chef');
     expect(callOpenAIJsonMock).toHaveBeenCalledTimes(1);
   });
 
-  it('YouTube async 202 → poll → draft, emits the transcribing stage', async () => {
+  it('async 202 → poll → draft, emits the transcribing stage (transcript fallback)', async () => {
     fetchReturning(
+      { status: 200, body: { description: '', transcriptLanguages: ['en'] } },
       { status: 202, body: { jobId: 'job-1' } },
       { status: 200, body: { status: 'completed', content: 'transcript text', lang: 'en' } },
     );
@@ -407,8 +455,11 @@ describe('POST /api/import — video via Supadata', () => {
     expect(sseDone(events)!.draft.name).toBe('Video Bread');
   });
 
-  it('transcript-unavailable → error event (422), no LLM call', async () => {
-    fetchReturning({ status: 404, body: { error: 'transcript-unavailable', message: 'none' } });
+  it('transcript-unavailable (metadata reports a transcript) → error event (422), no LLM call', async () => {
+    fetchReturning(
+      { status: 200, body: { description: '', transcriptLanguages: ['en'] } },
+      { status: 404, body: { error: 'transcript-unavailable', message: 'none' } },
+    );
 
     const res = await authedPost('/api/import').buffer(true).send({
       url: 'https://www.youtube.com/watch?v=zzz',

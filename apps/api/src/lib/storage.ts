@@ -26,6 +26,12 @@ export function buildDailyBatchKey(
   return `daily-batches/${userId}/${batchDate}-${slot}-${randomUUID()}.${ext}`;
 }
 
+export function buildAvatarKey(userId: string, contentType: string): string {
+  const ext = EXT_BY_MIME[contentType] ?? 'png';
+  // Unguessable key per upload (like recipe images) so re-uploads get a fresh URL — no CDN staleness.
+  return `avatars/${userId}-${randomUUID()}.${ext}`;
+}
+
 export async function uploadImage(
   buffer: Buffer,
   contentType: string,

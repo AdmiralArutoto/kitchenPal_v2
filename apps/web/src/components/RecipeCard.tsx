@@ -1,5 +1,6 @@
 import type { Recipe } from '../types/api';
 import Pill from './Pill';
+import ImageGeneratingPlaceholder from './ImageGeneratingPlaceholder';
 
 type Props = {
   recipe: Recipe;
@@ -22,6 +23,8 @@ export default function RecipeCard({ recipe, onClick }: Props) {
           loading="lazy"
           className="h-48 w-full shrink-0 object-cover"
         />
+      ) : recipe.imageGenerating ? (
+        <ImageGeneratingPlaceholder className="h-48 w-full shrink-0" />
       ) : (
         <div
           className="flex h-48 shrink-0 items-center justify-center bg-[linear-gradient(139deg,var(--color-accent-soft)_0%,var(--color-card-blob-pink)_50%,var(--color-card-blob-yellow)_100%)]"

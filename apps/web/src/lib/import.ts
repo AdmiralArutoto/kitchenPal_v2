@@ -8,6 +8,30 @@ import type {
 } from '../types/api';
 import type { RecipeFormValues } from '../components/RecipeEditForm';
 
+export type DetectedPlatform = 'instagram' | 'tiktok' | 'youtube' | 'website' | 'unknown';
+
+// Ensure a pasteable URL has a protocol so `new URL()` (here and on the backend) accepts it —
+// users paste "instagram.com/reel/…" without the scheme. The backend re-validates regardless.
+export function normalizeUrl(raw: string): string {
+  const t = raw.trim();
+  return /^https?:\/\//i.test(t) ? t : `https://${t}`;
+}
+
+// Client-side host classification for the import platform-confirm card (display only — no metadata
+// fetch). Mirrors the backend classifyUrl's host buckets (apps/api/src/lib/import/url.ts).
+export function detectPlatform(raw: string): DetectedPlatform {
+  let host: string;
+  try {
+    host = new URL(normalizeUrl(raw)).hostname.replace(/^www\./, '').toLowerCase();
+  } catch {
+    return 'unknown';
+  }
+  if (host === 'instagram.com' || host.endsWith('.instagram.com')) return 'instagram';
+  if (host === 'tiktok.com' || host.endsWith('.tiktok.com')) return 'tiktok';
+  if (host === 'youtube.com' || host.endsWith('.youtube.com') || host === 'youtu.be') return 'youtube';
+  return 'website';
+}
+
 // POST /api/import. Website/YouTube stream real progress over SSE (onStage fires per stage, resolves
 // on the `done` event); Instagram/TikTok return a JSON pending job to poll. A pre-stream error (e.g.
 // invalid URL → 400) comes back as JSON and is thrown as ApiError, same as the SSE `error` event.
