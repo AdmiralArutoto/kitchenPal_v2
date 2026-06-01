@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { toRecipeBody } from '../lib/recipe';
+import { toRecipeBody, formatAmount, formatUnit } from '../lib/recipe';
 import {
   useDeleteRecipe,
   useGenerateImage,
@@ -15,6 +15,7 @@ import ServingScaler from './ServingScaler';
 import RecipeEditForm, { type RecipeFormValues } from './RecipeEditForm';
 import SourceAttribution from './SourceAttribution';
 import ModifyStudio from './ModifyStudio';
+import ImageActionMenu from './ImageActionMenu';
 
 type Props = {
   recipe: Recipe;
@@ -24,8 +25,10 @@ type Props = {
 
 type Mode = 'idle' | 'modifying' | 'editing';
 
-// Recipe detail modal. View-only display with live serving scaler.
-// Edit + Delete go through cached mutations (optimistic). Modify with AI is local until Approve.
+// Recipe detail modal (Figma 47:1014). Left column = details + instructions (title w/ inline time,
+// description, source/video link, tags, Instructions). Right parchment column = image (w/ action
+// menu) + SCALE + ingredients table. Modify/Edit/Delete live in a sticky footer that stays in view
+// while the columns scroll. Edit + Delete go through cached mutations; Modify with AI is local.
 export default function RecipeModal({ recipe: initialRecipe, onClose, onTagClick }: Props) {
   const [recipe, setRecipe] = useState<Recipe>(initialRecipe);
   const [mode, setMode] = useState<Mode>('idle');
@@ -141,26 +144,41 @@ export default function RecipeModal({ recipe: initialRecipe, onClose, onTagClick
     );
   }
 
+  const imageLoading = generateImageMutation.isPending || recipe.imageGenerating;
+  const imageActions = recipe.imageUrl
+    ? [
+        { label: 'Regenerate', icon: <SparkleIcon />, onClick: handleRegenerateImage, disabled: imageBusy },
+        { label: 'Upload', icon: <UploadIcon />, onClick: () => fileInputRef.current?.click(), disabled: imageBusy },
+        { label: 'Remove', icon: <TrashIcon />, danger: true, onClick: handleRemoveImage, disabled: imageBusy },
+      ]
+    : [
+        { label: 'Generate with AI', icon: <SparkleIcon />, onClick: handleRegenerateImage, disabled: imageBusy },
+        { label: 'Upload', icon: <UploadIcon />, onClick: () => fileInputRef.current?.click(), disabled: imageBusy },
+      ];
+
   return (
     <Modal open ariaLabel={recipe.name} onClose={onClose} size="lg">
-      <div className="relative flex max-h-[85vh] flex-col">
-        {/* Vertical divider — top aligns with image top edge (p-5 = 20px from modal top),
-            bottom aligns with action buttons' bottom edge (p-5 = 20px from modal bottom). */}
-        <div
-          className="pointer-events-none absolute inset-y-5 left-1/2 hidden w-px bg-black/10 md:block"
-          aria-hidden="true"
-        />
-        {/* Unified scroll area — both columns share a single slim scrollbar at the card's outer edge */}
-        <div className="scrollbar-thin grid grid-cols-1 overflow-y-auto md:grid-cols-2">
-          {/* Left column — info + instructions */}
-          <div className="flex flex-col gap-4 p-5">
-            <header className="flex flex-col gap-2">
-              <h2 className="text-2xl font-semibold leading-8 text-text-default">{recipe.name}</h2>
+      <div className="relative flex max-h-[85vh] flex-col overflow-hidden rounded-[10px]">
+        <div className="scrollbar-thin grid min-h-0 flex-1 grid-cols-1 overflow-y-auto md:grid-cols-2">
+          {/* Left column — details + instructions */}
+          <div className="flex flex-col gap-4 p-6">
+            <header className="flex flex-col gap-1.5">
+              <div className="flex items-start justify-between gap-3">
+                <h2 className="font-serif text-2xl font-semibold leading-8 text-text-default">
+                  {recipe.name}
+                </h2>
+                {recipe.cookingTime != null && (
+                  <span className="inline-flex shrink-0 items-center gap-1.5 pt-1 text-sm text-text-muted">
+                    <ClockIcon /> {recipe.cookingTime} min
+                  </span>
+                )}
+              </div>
               {recipe.description && (
-                <p className="text-base leading-6 text-text-placeholder">{recipe.description}</p>
+                <p className="text-base leading-6 text-text-muted">{recipe.description}</p>
               )}
             </header>
 
+            {/* Source / video link container — reused in place for imported recipes */}
             {recipe.source === 'imported' && (
               <SourceAttribution
                 sourceUrl={recipe.sourceUrl}
@@ -169,27 +187,11 @@ export default function RecipeModal({ recipe: initialRecipe, onClose, onTagClick
               />
             )}
 
-            {/* Meta row */}
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-black/10 pb-4">
-              {recipe.cookingTime != null && (
-                <span className="inline-flex items-center gap-2 text-sm text-text-body">
-                  <ClockIcon /> {recipe.cookingTime} min
-                </span>
-              )}
-              <span className="inline-flex items-center gap-3 text-sm text-text-body">
-                <UsersIcon />
-                <ServingScaler value={servingsOverride} onChange={setServingsOverride} />
-              </span>
-            </div>
-
-            {/* Tags — click to filter catalog by this tag */}
+            {/* Tags */}
             {recipe.tags.length > 0 && (
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2 border-t border-border-subtle pt-4">
                 {recipe.tags.map((tag) => (
-                  <Pill
-                    key={tag}
-                    onClick={onTagClick ? () => onTagClick(tag) : undefined}
-                  >
+                  <Pill key={tag} onClick={onTagClick ? () => onTagClick(tag) : undefined}>
                     {tag}
                   </Pill>
                 ))}
@@ -203,10 +205,10 @@ export default function RecipeModal({ recipe: initialRecipe, onClose, onTagClick
                 <ol className="flex flex-col gap-3">
                   {recipe.steps.map((step, i) => (
                     <li key={i} className="flex gap-3">
-                      <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent-soft text-xs font-medium text-accent-text">
+                      <span className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent-soft font-serif text-xs font-bold text-accent-text">
                         {i + 1}
                       </span>
-                      <span className="text-sm leading-5 text-text-body">{step}</span>
+                      <span className="text-sm leading-6 text-text-body">{step}</span>
                     </li>
                   ))}
                 </ol>
@@ -214,9 +216,9 @@ export default function RecipeModal({ recipe: initialRecipe, onClose, onTagClick
             )}
           </div>
 
-          {/* Right column — image + ingredients + (optional modify panel) */}
-          <div className="flex flex-col gap-4 p-5">
-            {/* Hero — uploaded/generated image, or emoji-over-gradient fallback */}
+          {/* Right column — media & controls sidebar */}
+          <div className="flex flex-col gap-4 bg-bg-page p-5 md:border-l md:border-border-subtle">
+            {/* Image + top-right action menu */}
             <div className="relative h-48 shrink-0 overflow-hidden rounded-lg">
               {recipe.imageUrl ? (
                 <img
@@ -233,67 +235,40 @@ export default function RecipeModal({ recipe: initialRecipe, onClose, onTagClick
                   <span className="text-7xl">{recipe.emoji ?? '🍽️'}</span>
                 </div>
               )}
-              {(generateImageMutation.isPending || recipe.imageGenerating) && (
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                onChange={handleFilePicked}
+                className="hidden"
+              />
+              {imageLoading ? (
                 <div className="absolute inset-0 flex items-center justify-center bg-black/40 text-sm font-medium text-white">
                   Generating image…
                 </div>
+              ) : (
+                <ImageActionMenu actions={imageActions} ariaLabel="Image options" />
               )}
             </div>
 
-            {/* Image action row — visible only in idle mode */}
-            {mode === 'idle' && (
-              <div className="flex flex-wrap gap-2">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/png,image/jpeg,image/webp"
-                  onChange={handleFilePicked}
-                  className="hidden"
-                />
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  onClick={handleRegenerateImage}
-                  disabled={imageBusy}
-                >
-                  <SparkleIcon />
-                  <span className="ml-2">
-                    {recipe.imageUrl ? 'Regenerate' : 'Generate with AI'}
-                  </span>
-                </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={imageBusy}
-                >
-                  {uploadImageMutation.isPending ? 'Uploading…' : 'Upload'}
-                </Button>
-                {recipe.imageUrl && (
-                  <button
-                    type="button"
-                    onClick={handleRemoveImage}
-                    disabled={imageBusy}
-                    className="inline-flex h-8 items-center rounded-lg border border-border-subtle bg-bg-card px-3 text-sm font-medium text-danger hover:bg-bg-toggle disabled:opacity-50"
-                  >
-                    Remove
-                  </button>
-                )}
-              </div>
-            )}
+            {/* SCALE */}
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-border-subtle bg-bg-card px-4 py-3">
+              <span className="text-xs font-semibold uppercase tracking-wider text-text-placeholder">
+                Scale
+              </span>
+              <ServingScaler value={servingsOverride} onChange={setServingsOverride} />
+            </div>
 
             {/* Ingredients table */}
             {recipe.ingredients.length > 0 && (
-              <div className="overflow-hidden rounded-lg border border-border-subtle">
+              <div className="overflow-hidden rounded-lg border border-border-subtle bg-bg-card">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-border-subtle bg-bg-page">
-                      <th className="w-[40%] px-3 py-2 text-left text-xs font-medium text-text-body">
+                      <th className="w-[34%] px-3 py-1.5 text-left text-xs font-medium text-text-body">
                         Amount
                       </th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-text-body">
+                      <th className="px-3 py-1.5 text-left text-xs font-medium text-text-body">
                         Ingredient
                       </th>
                     </tr>
@@ -304,13 +279,13 @@ export default function RecipeModal({ recipe: initialRecipe, onClose, onTagClick
                         key={`${ing.name}-${i}`}
                         className="border-b border-bg-toggle last:border-b-0"
                       >
-                        <td className="px-3 py-2 text-text-muted">
+                        <td className="px-3 py-1.5 text-text-muted">
                           <span className="font-medium">
                             {formatAmount(scaleAmount(ing.amount))}
                           </span>
-                          {ing.unit && ` ${ing.unit}`}
+                          {ing.unit && ` ${formatUnit(ing.unit)}`}
                         </td>
-                        <td className="px-3 py-2 text-text-body">{ing.name}</td>
+                        <td className="px-3 py-1.5 text-text-body">{ing.name}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -322,42 +297,34 @@ export default function RecipeModal({ recipe: initialRecipe, onClose, onTagClick
           </div>
         </div>
 
-        {/* Sticky action footer — mirrors the right column width so it aligns with the ingredient table */}
-        <div className="grid grid-cols-1 md:grid-cols-2">
-          <div className="hidden md:block" />
-          <div className="flex flex-wrap justify-end gap-2 p-5">
-            <Button type="button" variant="secondary" size="sm" onClick={startModify}>
-              <SparkleIcon /> <span className="ml-2">Modify with AI</span>
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              onClick={() => {
-                setError(null);
-                setMode('editing');
-              }}
-            >
-              <PencilIcon /> <span className="ml-2">Edit</span>
-            </Button>
-            <button
-              type="button"
-              onClick={handleDelete}
-              className="inline-flex h-8 items-center gap-2 rounded-lg border border-border-subtle bg-bg-card px-3 text-sm font-medium text-danger hover:bg-bg-toggle"
-            >
-              <TrashIcon />
-              <span>Delete</span>
-            </button>
-          </div>
+        {/* Sticky footer — Modify / Edit / Delete stay in view while the columns scroll */}
+        <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border-subtle bg-bg-card p-4">
+          <Button type="button" variant="secondary" size="sm" onClick={startModify}>
+            <SparkleIcon /> <span className="ml-2">Modify</span>
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={() => {
+              setError(null);
+              setMode('editing');
+            }}
+          >
+            <PencilIcon /> <span className="ml-2">Edit</span>
+          </Button>
+          <button
+            type="button"
+            onClick={handleDelete}
+            aria-label="Delete recipe"
+            className="inline-flex h-8 w-9 items-center justify-center rounded-lg border border-border-subtle bg-bg-card text-danger hover:bg-bg-toggle"
+          >
+            <TrashIcon />
+          </button>
         </div>
       </div>
     </Modal>
   );
-}
-
-function formatAmount(n: number): string {
-  if (Number.isInteger(n)) return String(n);
-  return String(n);
 }
 
 function ClockIcon() {
@@ -379,27 +346,6 @@ function ClockIcon() {
   );
 }
 
-function UsersIcon() {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-      <circle cx="9" cy="7" r="4" />
-      <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
-      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-    </svg>
-  );
-}
-
 function SparkleIcon() {
   return (
     <svg
@@ -414,6 +360,26 @@ function SparkleIcon() {
       aria-hidden="true"
     >
       <path d="M12 3l2 6 6 2-6 2-2 6-2-6-6-2 6-2 2-6z" />
+    </svg>
+  );
+}
+
+function UploadIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="17 8 12 3 7 8" />
+      <line x1="12" y1="3" x2="12" y2="15" />
     </svg>
   );
 }

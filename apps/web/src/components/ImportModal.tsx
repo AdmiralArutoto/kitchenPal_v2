@@ -366,7 +366,7 @@ export default function ImportModal({ onClose, initialUrl }: Props) {
               >
                 Or paste recipe text instead
               </button>
-              <Button type="button" onClick={runUrlExtract} disabled={!url.trim() || busy}>
+              <Button type="button" variant="accent" onClick={runUrlExtract} disabled={!url.trim() || busy}>
                 Extract recipe
               </Button>
             </div>
@@ -402,7 +402,7 @@ export default function ImportModal({ onClose, initialUrl }: Props) {
                 <Button type="button" variant="secondary" onClick={onClose}>
                   Cancel
                 </Button>
-                <Button type="button" onClick={runUrlExtract} disabled={!url.trim() || busy}>
+                <Button type="button" variant="accent" onClick={runUrlExtract} disabled={!url.trim() || busy}>
                   Extract recipe
                 </Button>
               </div>
@@ -471,6 +471,7 @@ export default function ImportModal({ onClose, initialUrl }: Props) {
                   </button>
                   <Button
                     type="button"
+                    variant="accent"
                     onClick={runTextExtract}
                     disabled={!pasteText.trim() || busy}
                   >
@@ -542,7 +543,7 @@ export default function ImportModal({ onClose, initialUrl }: Props) {
                   >
                     Back to link
                   </button>
-                  <Button type="button" onClick={runImageExtract} disabled={!imageFile || busy}>
+                  <Button type="button" variant="accent" onClick={runImageExtract} disabled={!imageFile || busy}>
                     {busy ? 'Reading image…' : 'Extract recipe'}
                   </Button>
                 </div>

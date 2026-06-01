@@ -95,7 +95,7 @@ export default function Catalog() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex flex-col gap-2">
-          <h1 className="text-3xl font-medium leading-9 text-text-default">
+          <h1 className="font-serif text-3xl font-medium leading-9 text-text-default">
             My Recipe Collection
           </h1>
           <p className="text-base text-text-muted">{countLabel}</p>

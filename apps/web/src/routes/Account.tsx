@@ -109,7 +109,7 @@ export default function Account() {
             </svg>
           </span>
           <div>
-            <h2 className="text-2xl font-semibold text-text-default">Account</h2>
+            <h2 className="font-serif text-2xl font-semibold text-text-default">Account</h2>
             <p className="text-sm text-text-muted">Manage your personal information</p>
           </div>
         </div>

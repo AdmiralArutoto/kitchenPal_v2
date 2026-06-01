@@ -7,7 +7,7 @@ import AvatarMenu from './AvatarMenu';
 const links = [
   { to: '/home', label: 'Home' },
   { to: '/catalog', label: 'Catalog' },
-  { to: '/about', label: 'About' },
+  { to: '/cookmode', label: 'Cook Mode' },
 ];
 
 export default function Nav() {

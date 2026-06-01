@@ -10,6 +10,7 @@ import VerifyEmail from './routes/VerifyEmail';
 import Home from './routes/Home';
 import Catalog from './routes/Catalog';
 import About from './routes/About';
+import CookMode from './routes/CookMode';
 import Account from './routes/Account';
 import Settings from './routes/Settings';
 import Contact from './routes/Contact';
@@ -24,6 +25,8 @@ const router = createBrowserRouter([
   {
     element: <ProtectedRoute />,
     children: [
+      // Full-screen takeover — intentionally OUTSIDE AuthedLayout (no nav/footer while cooking).
+      { path: '/cookmode', element: <CookMode /> },
       {
         element: <AuthedLayout />,
         children: [

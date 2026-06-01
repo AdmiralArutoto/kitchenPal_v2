@@ -1,6 +1,6 @@
 import type { ComponentProps, ReactNode } from 'react';
 
-type Variant = 'primary' | 'secondary' | 'ghost' | 'chip';
+type Variant = 'primary' | 'accent' | 'secondary' | 'ghost' | 'chip';
 type Size = 'sm' | 'md';
 
 type Props = {
@@ -13,6 +13,8 @@ type Props = {
 const variantClasses: Record<Variant, string> = {
   primary:
     'rounded-lg bg-primary text-white hover:bg-primary-hover disabled:opacity-60 disabled:cursor-not-allowed',
+  accent:
+    'rounded-lg bg-accent text-white hover:bg-accent-hover disabled:opacity-60 disabled:cursor-not-allowed',
   secondary:
     'rounded-lg bg-bg-card text-text-default border border-border-subtle hover:bg-bg-toggle disabled:opacity-60 disabled:cursor-not-allowed',
   ghost:

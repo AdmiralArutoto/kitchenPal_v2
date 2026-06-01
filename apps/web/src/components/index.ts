@@ -18,6 +18,7 @@ export { default as FormField } from './FormField';
 export { default as GenBar } from './GenBar';
 export { default as GenerateModal } from './GenerateModal';
 export { default as Hero } from './Hero';
+export { default as ImageActionMenu } from './ImageActionMenu';
 export { default as ImportModal } from './ImportModal';
 export { default as ModifyStudio } from './ModifyStudio';
 export { default as Input } from './Input';

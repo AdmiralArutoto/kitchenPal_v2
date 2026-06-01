@@ -31,7 +31,7 @@ export default function Faq() {
   return (
     <div className="mx-auto flex w-full max-w-[896px] flex-col gap-6 px-6 pt-12 pb-20">
       <Card variant="bordered" padding="lg">
-        <h1 className="text-3xl font-semibold text-text-default">Frequently asked questions</h1>
+        <h1 className="font-serif text-3xl font-semibold text-text-default">Frequently asked questions</h1>
         <p className="mt-2 text-base text-text-muted">Quick answers to common questions.</p>
 
         <div className="mt-6 flex flex-col divide-y divide-black/5">

@@ -33,7 +33,7 @@ export default function VerifyEmail() {
   return (
     <main className="flex min-h-screen items-center justify-center px-4 py-12">
       <Card padding="lg" className="w-full max-w-md text-center">
-        <h1 className="text-2xl font-semibold text-text-default">Check your email</h1>
+        <h1 className="font-serif text-2xl font-semibold text-text-default">Check your email</h1>
         <p className="mt-3 text-sm text-text-muted">
           We sent a verification link to{' '}
           <span className="font-medium text-text-default">{user?.email ?? 'your email'}</span>.

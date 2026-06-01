@@ -11,7 +11,7 @@ type Props = {
 
 const variantClasses: Record<Variant, string> = {
   shadow:
-    'shadow-[0px_20px_25px_-5px_rgba(0,0,0,0.1),0px_8px_10px_-6px_rgba(0,0,0,0.1)]',
+    'shadow-[0px_4px_20px_rgba(62,86,65,0.06),0px_1px_3px_rgba(62,86,65,0.04)]',
   bordered: 'border border-border-subtle',
 };
 

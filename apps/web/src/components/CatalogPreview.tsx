@@ -28,7 +28,7 @@ export default function CatalogPreview({ onSelect }: Props) {
       <div className="mx-auto w-full max-w-[1024px] px-6 pb-12">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div className="flex flex-col gap-1">
-            <h2 className="text-2xl font-semibold text-text-default">My Recipe Collection</h2>
+            <h2 className="font-serif text-2xl font-semibold text-text-default">My Recipe Collection</h2>
             <p className="text-sm text-text-muted">{countLabel}</p>
           </div>
           <Link

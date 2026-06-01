@@ -14,7 +14,7 @@ export default function LegalDoc({ title, updated, intro, sections }: Props) {
   return (
     <div className="mx-auto flex w-full max-w-[896px] flex-col gap-6 px-6 pt-12 pb-20">
       <Card variant="bordered" padding="lg">
-        <h1 className="text-3xl font-semibold text-text-default">{title}</h1>
+        <h1 className="font-serif text-3xl font-semibold text-text-default">{title}</h1>
         <p className="mt-1 text-sm text-text-muted">Last updated: {updated}</p>
         {intro && <p className="mt-4 text-base leading-7 text-text-body">{intro}</p>}
 

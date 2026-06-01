@@ -13,7 +13,7 @@ export default function About() {
   return (
     <div className="mx-auto flex w-full max-w-[896px] flex-col gap-8 px-6 pt-12 pb-20">
       <Card variant="bordered" padding="lg">
-        <h2 className="border-b border-black/10 pb-4 text-2xl font-semibold text-text-default">
+        <h2 className="border-b border-black/10 pb-4 font-serif text-2xl font-semibold text-text-default">
           About KitchenPal
         </h2>
         <div className="mt-4 flex flex-col gap-4">

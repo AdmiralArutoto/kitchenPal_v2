@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { apiFetch, ApiError } from '../lib/api';
-import { toRecipeBody, type RecipeBody } from '../lib/recipe';
+import { toRecipeBody, formatAmount, formatUnit, type RecipeBody } from '../lib/recipe';
 import { useCreateRecipe, useUpdateRecipe } from '../hooks/useRecipes';
 import { useToast } from '../contexts/ToastContext';
 import type {
@@ -12,7 +12,6 @@ import type {
   StepDiff,
 } from '../types/api';
 import Panel from './Panel';
-import Button from './Button';
 import Input from './Input';
 
 type Props = {
@@ -28,6 +27,12 @@ const SCALES: { label: string; factor: number }[] = [
 ];
 const DIETARY = ['Vegan', 'Gluten-free', 'Dairy-free', 'Low-carb'];
 const SIMPLIFY = ['Fewer steps', 'Pantry only'];
+
+// Buttons on the deep-sage Modify card (Figma 52:283): white primary + translucent-outline.
+const WHITE_BTN =
+  'inline-flex h-9 w-full items-center justify-center rounded-lg bg-white px-4 text-sm font-semibold text-primary-deep transition-colors hover:bg-bg-page disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-primary';
+const OUTLINE_BTN =
+  'inline-flex h-9 w-full items-center justify-center rounded-lg border border-white/30 px-4 text-sm font-medium text-white transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-primary';
 
 // Modify studio (v2_modify_with_ai): the recipe and the Modify panel are TWO separate cards floating
 // over a backdrop (the panel is a dialog beside the recipe, not a column inside it). Quick controls
@@ -172,7 +177,7 @@ export default function ModifyStudio({ recipe, onClose }: Props) {
           <div className={`flex flex-col gap-5 p-6 ${busy ? 'opacity-60' : ''}`}>
             <header className="flex flex-col gap-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <h2 className="text-2xl font-semibold text-text-default">{recipe.name}</h2>
+                <h2 className="font-serif text-2xl font-semibold text-text-default">{recipe.name}</h2>
                 <span className="inline-flex items-center gap-1 rounded-full bg-primary px-2.5 py-1 text-xs font-semibold text-white">
                   <SparkleIcon /> {busy ? 'Updating…' : 'Modify mode'}
                 </span>
@@ -219,12 +224,13 @@ export default function ModifyStudio({ recipe, onClose }: Props) {
         {/* Modify dialog — separate card beside the recipe */}
         <Panel
           padding="none"
+          bordered={false}
           className="scrollbar-thin w-full overflow-hidden md:max-h-[90vh] md:w-[360px] md:shrink-0 md:overflow-y-auto"
         >
-          <div className="flex flex-col gap-4 bg-accent-bg-soft p-5">
+          <div className="flex flex-col gap-4 bg-primary p-5">
             <div className="flex items-center justify-between">
-              <h3 className="inline-flex items-center gap-2 text-base font-semibold text-text-default">
-                <span className="text-primary">
+              <h3 className="inline-flex items-center gap-2 text-base font-semibold text-footer-muted">
+                <span className="text-footer-muted">
                   <SparkleIcon />
                 </span>
                 Modify
@@ -233,7 +239,7 @@ export default function ModifyStudio({ recipe, onClose }: Props) {
                 type="button"
                 onClick={onClose}
                 aria-label="Close"
-                className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-text-muted hover:bg-bg-toggle"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-footer-muted hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
               >
                 <XIcon />
               </button>
@@ -273,7 +279,7 @@ export default function ModifyStudio({ recipe, onClose }: Props) {
             </ControlGroup>
 
             <div className="flex flex-col gap-2">
-              <span className="text-sm font-medium text-text-default">Substitute</span>
+              <span className="text-sm font-medium text-footer-muted">Substitute</span>
               <Input
                 value={substitute}
                 onChange={(e) => setSubstitute(e.target.value)}
@@ -288,29 +294,34 @@ export default function ModifyStudio({ recipe, onClose }: Props) {
               />
             </div>
 
-            <Button type="button" fullWidth onClick={applyChanges} disabled={!hasControls || busy}>
+            <button type="button" onClick={applyChanges} disabled={!hasControls || busy} className={WHITE_BTN}>
               <SparkleIcon />
               <span className="ml-2">{busy ? 'Applying…' : 'Apply with AI'}</span>
-            </Button>
+            </button>
 
             {error && (
-              <p className="text-sm text-danger" role="alert">
+              <p className="text-sm text-danger-light" role="alert">
                 {error}
               </p>
             )}
 
-            <div className="flex flex-col gap-2 border-t border-accent-peach pt-4">
-              <Button type="button" fullWidth onClick={saveAsCopy} disabled={!hasChanges || busy}>
+            <div className="flex flex-col gap-2 border-t border-white/15 pt-4">
+              <button type="button" onClick={saveAsCopy} disabled={!hasChanges || busy} className={WHITE_BTN}>
                 Save as copy
-              </Button>
-              <Button type="button" variant="secondary" fullWidth onClick={replaceOriginal} disabled={!hasChanges || busy}>
+              </button>
+              <button
+                type="button"
+                onClick={replaceOriginal}
+                disabled={!hasChanges || busy}
+                className={OUTLINE_BTN}
+              >
                 Replace original
-              </Button>
+              </button>
               <button
                 type="button"
                 onClick={undoAll}
                 disabled={!hasChanges && !hasControls}
-                className="mx-auto text-sm font-medium text-text-muted hover:text-text-default disabled:opacity-50"
+                className="mx-auto text-sm font-medium text-footer-muted hover:text-white disabled:opacity-50"
               >
                 Undo all
               </button>
@@ -372,7 +383,7 @@ function StepDiffRow({ row, index }: { row: StepDiff; index: number }) {
 function ControlGroup({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-2">
-      <span className="text-sm font-medium text-text-default">{label}</span>
+      <span className="text-sm font-medium text-footer-muted">{label}</span>
       <div className="flex flex-wrap gap-2">{children}</div>
     </div>
   );
@@ -391,10 +402,10 @@ function SegButton({
     <button
       type="button"
       onClick={onClick}
-      className={`inline-flex h-8 items-center justify-center rounded-lg px-3 text-sm font-medium transition-colors ${
+      className={`inline-flex h-8 items-center justify-center rounded-lg px-3 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 ${
         active
-          ? 'bg-text-default text-bg-card'
-          : 'border border-border-subtle bg-bg-card text-text-body hover:bg-bg-toggle'
+          ? 'bg-white text-primary-deep'
+          : 'border border-white/20 bg-white/5 text-white hover:bg-white/10'
       }`}
     >
       {children}
@@ -411,8 +422,8 @@ function StepNumber({ n }: { n: number }) {
 }
 
 function fmtIngredient(ing: Ingredient): string {
-  const amount = ing.amount ? String(ing.amount) : '';
-  const head = [amount, ing.unit].filter(Boolean).join(' ');
+  const amount = ing.amount ? formatAmount(ing.amount) : '';
+  const head = [amount, formatUnit(ing.unit)].filter(Boolean).join(' ');
   return [head, ing.name].filter(Boolean).join(' ').trim();
 }
 

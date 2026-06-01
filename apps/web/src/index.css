@@ -1,35 +1,53 @@
 @import 'tailwindcss';
 
 @theme {
+  /* "Culinary Serenity" — parchment surfaces, deep-sage primary, terracotta accent.
+     Token NAMES are stable (components reference them via Tailwind utilities); only the
+     VALUES changed in the v3 reskin. See .claude/DECISIONS.md [2026-06-01]. */
   --default-font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-serif: 'Source Serif 4', ui-serif, Georgia, serif;
 
-  --color-primary: #ff6900;
-  --color-primary-hover: #e85d00;
-  --color-primary-deep: #f54900;
-  --color-gradient-end: #fb2c36;
-  --color-accent-peach: #ffd6a8;
-  --color-bg-app: #e9ebf0;
-  --color-bg-page: #f9fafb;
+  /* Primary = deep sage (buttons, active nav, focus rings, logo) */
+  --color-primary: #3e5641;
+  --color-primary-hover: #324a37;
+  --color-primary-deep: #273f2b;
+  --color-gradient-end: #99462a; /* sage→terracotta earthy brand gradient */
+
+  /* Featured accent = terracotta (Import / Cook mode / step numerals / source links) */
+  --color-accent: #99462a;
+  --color-accent-hover: #823a22;
+  --color-accent-text: #99462a;
+  --color-accent-peach: #ffb59e;
+  --color-accent-soft: #ffdbd0;
+  --color-accent-bg-soft: #fdeee7;
+
+  /* Surfaces = warm parchment (outer page dimmer; cards pop white) */
+  --color-bg-app: #e9e8e6;
+  --color-bg-page: #faf9f7;
   --color-bg-card: #ffffff;
-  --color-bg-input: #f3f3f5;
-  --color-bg-toggle: #f3f4f6;
-  --color-text-default: #101828;
-  --color-text-muted: #4a5565;
-  --color-text-placeholder: #717182;
-  --color-text-body: #364153;
-  --color-border-subtle: #e5e7eb;
+  --color-bg-input: #f4f3f1;
+  --color-bg-toggle: #efeeec;
 
-  --color-bg-footer: #101828;
-  --color-text-footer-muted: #99a1af;
-  --color-accent-soft: #ffedd4;
-  --color-pill-bg: #eceef2;
-  --color-pill-text: #030213;
-  --color-accent-text: #ca3500;
-  --color-danger: #e7000b;
-  --color-danger-light: #ffc9c9;
-  --color-card-blob-pink: #ffe2e2;
-  --color-card-blob-yellow: #fef9c2;
-  --color-accent-bg-soft: #fff7ed;
+  /* Text = warm charcoal range */
+  --color-text-default: #1a1c1b;
+  --color-text-body: #2d2d2d;
+  --color-text-muted: #434842;
+  --color-text-placeholder: #737971;
+  --color-border-subtle: #d8d8d4;
+
+  /* Footer = deep sage "cookbook cover" */
+  --color-bg-footer: #273f2b;
+  --color-text-footer-muted: #afcaaf;
+
+  --color-pill-bg: #efeeec;
+  --color-pill-text: #1a1c1b;
+
+  --color-danger: #ba1a1a;
+  --color-danger-light: #ffdad6;
+
+  /* Recipe image-fallback wash: terracotta → ochre → sage */
+  --color-card-blob-pink: #ffddb8;
+  --color-card-blob-yellow: #ceeace;
 }
 
 body {

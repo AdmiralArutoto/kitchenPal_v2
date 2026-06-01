@@ -33,7 +33,7 @@ export default function AddRecipeChooser({ onClose }: Props) {
       <div className="flex flex-col gap-5 p-6">
         <header className="flex items-start justify-between gap-4">
           <div className="flex flex-col gap-1">
-            <h2 className="text-lg font-semibold text-text-default">Add a recipe</h2>
+            <h2 className="font-serif text-lg font-semibold text-text-default">Add a recipe</h2>
             <p className="text-sm text-text-muted">Choose how you’d like to add one</p>
           </div>
           <button
@@ -49,10 +49,10 @@ export default function AddRecipeChooser({ onClose }: Props) {
         {/* Dominant import card */}
         <div className="flex flex-col gap-3 rounded-xl border border-accent-peach bg-accent-bg-soft p-5">
           <div className="flex items-center gap-2">
-            <span className="inline-flex items-center rounded-full bg-primary px-2.5 py-0.5 text-xs font-semibold text-white">
+            <span className="inline-flex items-center rounded-full bg-accent px-2.5 py-0.5 text-xs font-semibold text-white">
               Recommended
             </span>
-            <span className="text-primary">
+            <span className="text-accent">
               <SparkleIcon />
             </span>
           </div>
@@ -77,7 +77,7 @@ export default function AddRecipeChooser({ onClose }: Props) {
               placeholder="instagram.com/reel/Cx4hN2…"
               className="bg-bg-card"
             />
-            <Button type="button" onClick={startImport} disabled={!url.trim()}>
+            <Button type="button" variant="accent" onClick={startImport} disabled={!url.trim()}>
               Import
             </Button>
           </div>

@@ -1,5 +1,6 @@
 import { useState, type FormEvent, type ReactNode } from 'react';
 import type { Ingredient } from '../types/api';
+import { formatAmount, formatUnit, parseAmount } from '../lib/recipe';
 import Button from './Button';
 import Input from './Input';
 import Textarea from './Textarea';
@@ -63,7 +64,7 @@ export default function RecipeEditForm({
   const [ingredients, setIngredients] = useState<IngredientRow[]>(() =>
     initialValues.ingredients.length > 0
       ? initialValues.ingredients.map((i) => ({
-          amountText: `${formatAmount(i.amount)} ${i.unit}`.trim(),
+          amountText: `${formatAmount(i.amount)} ${formatUnit(i.unit)}`.trim(),
           name: i.name,
         }))
       : [{ amountText: '', name: '' }],
@@ -139,7 +140,7 @@ export default function RecipeEditForm({
       }
       const parsed = parseAmount(amountText);
       if (!parsed) {
-        setError(`Ingredient amount must start with a number (e.g. "1 cup")`);
+        setError(`Ingredient amount must start with a number (e.g. "1 cup" or "1/2 tsp")`);
         return;
       }
       parsedIngredients.push({ ...parsed, name: nameText });
@@ -212,7 +213,7 @@ export default function RecipeEditForm({
     setServings(v.servings != null ? String(v.servings) : '1');
     setIngredients(
       v.ingredients.length > 0
-        ? v.ingredients.map((i) => ({ amountText: `${formatAmount(i.amount)} ${i.unit}`.trim(), name: i.name }))
+        ? v.ingredients.map((i) => ({ amountText: `${formatAmount(i.amount)} ${formatUnit(i.unit)}`.trim(), name: i.name }))
         : [{ amountText: '', name: '' }],
     );
     setSteps(v.steps.length > 0 ? v.steps : ['']);
@@ -254,7 +255,7 @@ export default function RecipeEditForm({
           {(title || subtitle) && (
             <header className="flex flex-col gap-1">
               {title && (
-                <h2 className="text-lg font-semibold leading-tight text-text-default">{title}</h2>
+                <h2 className="font-serif text-lg font-semibold leading-tight text-text-default">{title}</h2>
               )}
               {subtitle && <p className="text-sm text-text-placeholder">{subtitle}</p>}
             </header>
@@ -537,19 +538,6 @@ export default function RecipeEditForm({
       </div>
     </form>
   );
-}
-
-function parseAmount(s: string): { amount: number; unit: string } | null {
-  const match = s.trim().match(/^([\d.]+)\s*(.*)$/);
-  if (!match) return null;
-  const amount = parseFloat(match[1]!);
-  if (isNaN(amount)) return null;
-  return { amount, unit: (match[2] ?? '').trim() };
-}
-
-function formatAmount(n: number): string {
-  if (Number.isInteger(n)) return String(n);
-  return String(n);
 }
 
 function XIcon() {

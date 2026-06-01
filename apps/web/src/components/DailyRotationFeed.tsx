@@ -18,7 +18,7 @@ export default function DailyRotationFeed() {
         <div className="rounded-2xl border-2 border-dashed border-accent-peach bg-accent-bg-soft p-5">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="flex flex-col gap-1">
-              <h2 className="flex items-center gap-2 text-2xl font-semibold text-text-default">
+              <h2 className="flex items-center gap-2 font-serif text-2xl font-semibold text-text-default">
                 <span aria-hidden="true">🍳</span> Ideas for tonight
               </h2>
               <p className="text-sm text-text-muted">

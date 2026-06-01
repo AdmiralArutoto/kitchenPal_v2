@@ -37,7 +37,7 @@ export default function Settings() {
               <GearIcon />
             </span>
             <div>
-              <h2 className="text-2xl font-semibold text-text-default">Settings</h2>
+              <h2 className="font-serif text-2xl font-semibold text-text-default">Settings</h2>
               <p className="text-sm text-text-muted">Preferences for how KitchenPal works</p>
             </div>
           </div>

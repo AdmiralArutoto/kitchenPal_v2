@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { FullRecipeResponse } from '../types/api';
+import { formatAmount, formatUnit } from '../lib/recipe';
 import Panel from './Panel';
 import Pill from './Pill';
 import Button from './Button';
@@ -84,7 +85,7 @@ export default function FinalRecipePanel({
       <div className="flex flex-col gap-6 pb-6 pl-6 pr-6 pt-6">
         {/* Top: title + description + meta + tags */}
         <div className="flex flex-col gap-3">
-          <h2 className="text-3xl font-medium leading-9 text-text-default">{recipe.name}</h2>
+          <h2 className="font-serif text-3xl font-medium leading-9 text-text-default">{recipe.name}</h2>
           <p className="text-base leading-6 text-text-muted">{recipe.description}</p>
           <div className="flex flex-wrap gap-6 text-sm text-text-body">
             <span>
@@ -122,7 +123,7 @@ export default function FinalRecipePanel({
                 {recipe.ingredients.map((ing, i) => (
                   <tr key={`${ing.name}-${i}`} className="border-b border-bg-toggle last:border-b-0">
                     <td className="px-4 py-2.5 font-medium text-text-muted">
-                      {ing.amount} {ing.unit}
+                      {formatAmount(ing.amount)} {formatUnit(ing.unit)}
                     </td>
                     <td className="px-4 py-2.5 text-text-body">{ing.name}</td>
                   </tr>
